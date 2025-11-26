@@ -75,7 +75,7 @@ export default function ReverseLookup() {
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Step 1: Select Buffer Tube ({tubeCount} tubes)
           </label>
-          <div className="grid grid-cols-6 gap-2">
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
             {Array.from({ length: tubeCount }, (_, i) => i + 1).map(
               (tubeNum) => {
                 const tubeColor = getTubeColor(tubeNum);
@@ -117,7 +117,7 @@ export default function ReverseLookup() {
               Step 2: Select Fiber Color (in Tube {selectedTube} -{" "}
               {getTubeColor(selectedTube).name})
             </label>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
               {FIBER_COLORS.map((color, index) => {
                 const fiberPos = index + 1;
                 const isSelected = selectedFiber === fiberPos;
