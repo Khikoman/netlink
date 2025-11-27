@@ -12,6 +12,10 @@ import type {
   MapNode,
   MapRoute,
   SyncQueueItem,
+  Splitter,
+  Port,
+  OLT,
+  OLTPonPort,
 } from "@/types";
 
 // NetLink Database using Dexie.js (IndexedDB wrapper)
@@ -29,6 +33,10 @@ class NetLinkDB extends Dexie {
   mapNodes!: EntityTable<MapNode, "id">;
   mapRoutes!: EntityTable<MapRoute, "id">;
   syncQueue!: EntityTable<SyncQueueItem, "id">;
+  splitters!: EntityTable<Splitter, "id">;
+  ports!: EntityTable<Port, "id">;
+  olts!: EntityTable<OLT, "id">;
+  oltPonPorts!: EntityTable<OLTPonPort, "id">;
 
   constructor() {
     super("NetLinkDB");
@@ -48,6 +56,44 @@ class NetLinkDB extends Dexie {
       mapNodes: "++id, projectId, type, enclosureId",
       mapRoutes: "++id, projectId, fromNodeId, toNodeId, cableId",
       syncQueue: "++id, table, recordId, synced, timestamp",
+    });
+
+    // Version 2: Add splitters and ports for LCP/NAP support
+    this.version(2).stores({
+      projects: "++id, name, status, createdAt",
+      enclosures: "++id, projectId, name, type",
+      trays: "++id, enclosureId, number",
+      cables: "++id, projectId, name, fiberCount",
+      splices: "++id, trayId, cableAId, cableBId, fiberA, fiberB, status, timestamp",
+      otdrTraces: "++id, spliceId, wavelength, uploadedAt",
+      inventory: "++id, category, name, partNumber",
+      inventoryUsage: "++id, inventoryId, projectId, date",
+      lossBudgets: "++id, [input.name], createdAt",
+      mapNodes: "++id, projectId, type, enclosureId",
+      mapRoutes: "++id, projectId, fromNodeId, toNodeId, cableId",
+      syncQueue: "++id, table, recordId, synced, timestamp",
+      splitters: "++id, enclosureId, name, type",
+      ports: "++id, enclosureId, splitterId, portNumber, status",
+    });
+
+    // Version 3: Add OLT support and hierarchy (parentType/parentId on enclosures)
+    this.version(3).stores({
+      projects: "++id, name, status, createdAt",
+      enclosures: "++id, projectId, name, type, parentType, parentId",
+      trays: "++id, enclosureId, number",
+      cables: "++id, projectId, name, fiberCount",
+      splices: "++id, trayId, cableAId, cableBId, fiberA, fiberB, status, timestamp",
+      otdrTraces: "++id, spliceId, wavelength, uploadedAt",
+      inventory: "++id, category, name, partNumber",
+      inventoryUsage: "++id, inventoryId, projectId, date",
+      lossBudgets: "++id, [input.name], createdAt",
+      mapNodes: "++id, projectId, type, enclosureId",
+      mapRoutes: "++id, projectId, fromNodeId, toNodeId, cableId",
+      syncQueue: "++id, table, recordId, synced, timestamp",
+      splitters: "++id, enclosureId, name, type",
+      ports: "++id, enclosureId, splitterId, portNumber, status",
+      olts: "++id, projectId, name",
+      oltPonPorts: "++id, oltId, portNumber, status",
     });
   }
 }
@@ -130,6 +176,12 @@ export async function deleteEnclosure(id: number) {
   for (const tray of trays) {
     if (tray.id) await deleteTray(tray.id);
   }
+  // Delete all splitters and ports (for LCP/NAP)
+  const splitters = await db.splitters.where("enclosureId").equals(id).toArray();
+  for (const splitter of splitters) {
+    if (splitter.id) await deleteSplitter(splitter.id);
+  }
+  await db.ports.where("enclosureId").equals(id).delete();
   return db.enclosures.delete(id);
 }
 
@@ -370,6 +422,261 @@ export async function updateMapRoute(id: number, updates: Partial<MapRoute>) {
 
 export async function deleteMapRoute(id: number) {
   return db.mapRoutes.delete(id);
+}
+
+// ============================================
+// SPLITTER OPERATIONS (LCP/NAP)
+// ============================================
+
+export async function createSplitter(splitter: Omit<Splitter, "id" | "createdAt">): Promise<number> {
+  const id = await db.splitters.add({
+    ...splitter,
+    createdAt: new Date(),
+  });
+  return id as number;
+}
+
+export async function getSplitters(enclosureId: number) {
+  return db.splitters.where("enclosureId").equals(enclosureId).toArray();
+}
+
+export async function getSplitter(id: number) {
+  return db.splitters.get(id);
+}
+
+export async function updateSplitter(id: number, updates: Partial<Splitter>) {
+  return db.splitters.update(id, updates);
+}
+
+export async function deleteSplitter(id: number) {
+  // Delete all ports belonging to this splitter
+  await db.ports.where("splitterId").equals(id).delete();
+  return db.splitters.delete(id);
+}
+
+// ============================================
+// PORT OPERATIONS (LCP/NAP)
+// ============================================
+
+export async function createPort(port: Omit<Port, "id" | "createdAt">): Promise<number> {
+  const id = await db.ports.add({
+    ...port,
+    createdAt: new Date(),
+  });
+  return id as number;
+}
+
+export async function getPorts(enclosureId: number) {
+  const ports = await db.ports.where("enclosureId").equals(enclosureId).toArray();
+  return ports.sort((a, b) => a.portNumber - b.portNumber);
+}
+
+export async function getPortsBySplitter(splitterId: number) {
+  const ports = await db.ports.where("splitterId").equals(splitterId).toArray();
+  return ports.sort((a, b) => a.portNumber - b.portNumber);
+}
+
+export async function getPort(id: number) {
+  return db.ports.get(id);
+}
+
+export async function updatePort(id: number, updates: Partial<Port>) {
+  return db.ports.update(id, updates);
+}
+
+export async function deletePort(id: number) {
+  return db.ports.delete(id);
+}
+
+export async function getAvailablePorts(enclosureId: number) {
+  const ports = await db.ports.where("enclosureId").equals(enclosureId).toArray();
+  return ports.filter(p => p.status === "available").sort((a, b) => a.portNumber - b.portNumber);
+}
+
+export async function getPortsByStatus(enclosureId: number, status: Port["status"]) {
+  const ports = await db.ports.where("enclosureId").equals(enclosureId).toArray();
+  return ports.filter(p => p.status === status).sort((a, b) => a.portNumber - b.portNumber);
+}
+
+// ============================================
+// OLT OPERATIONS
+// ============================================
+
+export async function createOLT(olt: Omit<OLT, "id" | "createdAt">): Promise<number> {
+  const id = await db.olts.add({
+    ...olt,
+    createdAt: new Date(),
+  });
+  return id as number;
+}
+
+export async function getOLTs(projectId: number) {
+  return db.olts.where("projectId").equals(projectId).toArray();
+}
+
+export async function getOLT(id: number) {
+  return db.olts.get(id);
+}
+
+export async function updateOLT(id: number, updates: Partial<OLT>) {
+  return db.olts.update(id, updates);
+}
+
+export async function deleteOLT(id: number) {
+  // Delete all PON ports
+  await db.oltPonPorts.where("oltId").equals(id).delete();
+  // Set parentId to undefined for any LCPs using this OLT
+  const lcps = await db.enclosures
+    .where("parentId")
+    .equals(id)
+    .filter((e) => e.parentType === "olt")
+    .toArray();
+  for (const lcp of lcps) {
+    if (lcp.id) {
+      await db.enclosures.update(lcp.id, { parentId: undefined, parentType: undefined });
+    }
+  }
+  return db.olts.delete(id);
+}
+
+// ============================================
+// OLT PON PORT OPERATIONS
+// ============================================
+
+export async function createOLTPonPort(port: Omit<OLTPonPort, "id">): Promise<number> {
+  const id = await db.oltPonPorts.add(port);
+  return id as number;
+}
+
+export async function getOLTPonPorts(oltId: number) {
+  const ports = await db.oltPonPorts.where("oltId").equals(oltId).toArray();
+  return ports.sort((a, b) => a.portNumber - b.portNumber);
+}
+
+export async function getOLTPonPort(id: number) {
+  return db.oltPonPorts.get(id);
+}
+
+export async function updateOLTPonPort(id: number, updates: Partial<OLTPonPort>) {
+  return db.oltPonPorts.update(id, updates);
+}
+
+export async function deleteOLTPonPort(id: number) {
+  // Clear oltPonPortId on any LCPs using this port
+  const lcps = await db.enclosures
+    .filter((e) => e.oltPonPortId === id)
+    .toArray();
+  for (const lcp of lcps) {
+    if (lcp.id) {
+      await db.enclosures.update(lcp.id, { oltPonPortId: undefined });
+    }
+  }
+  return db.oltPonPorts.delete(id);
+}
+
+// ============================================
+// HIERARCHY QUERIES
+// ============================================
+
+export async function getLCPsByOLT(oltId: number) {
+  return db.enclosures
+    .where("parentId")
+    .equals(oltId)
+    .filter((e) => e.parentType === "olt" && (e.type === "lcp" || e.type === "fdt"))
+    .toArray();
+}
+
+export async function getNAPsByLCP(lcpId: number) {
+  return db.enclosures
+    .where("parentId")
+    .equals(lcpId)
+    .filter((e) => e.parentType === "lcp" && (e.type === "nap" || e.type === "fat"))
+    .toArray();
+}
+
+export async function getOrphanedLCPs(projectId: number) {
+  return db.enclosures
+    .where("projectId")
+    .equals(projectId)
+    .filter((e) => (e.type === "lcp" || e.type === "fdt") && !e.parentId)
+    .toArray();
+}
+
+export async function getOrphanedNAPs(projectId: number) {
+  return db.enclosures
+    .where("projectId")
+    .equals(projectId)
+    .filter((e) => (e.type === "nap" || e.type === "fat") && !e.parentId)
+    .toArray();
+}
+
+export interface HierarchyStats {
+  lcpCount: number;
+  napCount: number;
+  customerCount: number;
+  utilization: number;
+}
+
+export async function getOLTHierarchyStats(oltId: number): Promise<HierarchyStats> {
+  const lcps = await getLCPsByOLT(oltId);
+  let totalNAPs = 0;
+  let totalCustomers = 0;
+  let totalPorts = 0;
+  let connectedPorts = 0;
+
+  for (const lcp of lcps) {
+    if (!lcp.id) continue;
+    const naps = await getNAPsByLCP(lcp.id);
+    totalNAPs += naps.length;
+
+    for (const nap of naps) {
+      if (!nap.id) continue;
+      const ports = await db.ports.where("enclosureId").equals(nap.id).toArray();
+      totalPorts += ports.length;
+      connectedPorts += ports.filter((p) => p.status === "connected").length;
+      totalCustomers += ports.filter((p) => p.status === "connected").length;
+    }
+  }
+
+  return {
+    lcpCount: lcps.length,
+    napCount: totalNAPs,
+    customerCount: totalCustomers,
+    utilization: totalPorts > 0 ? Math.round((connectedPorts / totalPorts) * 100) : 0,
+  };
+}
+
+export async function getLCPHierarchyStats(lcpId: number): Promise<HierarchyStats> {
+  const naps = await getNAPsByLCP(lcpId);
+  let totalCustomers = 0;
+  let totalPorts = 0;
+  let connectedPorts = 0;
+
+  for (const nap of naps) {
+    if (!nap.id) continue;
+    const ports = await db.ports.where("enclosureId").equals(nap.id).toArray();
+    totalPorts += ports.length;
+    connectedPorts += ports.filter((p) => p.status === "connected").length;
+    totalCustomers += ports.filter((p) => p.status === "connected").length;
+  }
+
+  return {
+    lcpCount: 0,
+    napCount: naps.length,
+    customerCount: totalCustomers,
+    utilization: totalPorts > 0 ? Math.round((connectedPorts / totalPorts) * 100) : 0,
+  };
+}
+
+export async function getNAPStats(napId: number) {
+  const ports = await db.ports.where("enclosureId").equals(napId).toArray();
+  return {
+    total: ports.length,
+    available: ports.filter((p) => p.status === "available").length,
+    connected: ports.filter((p) => p.status === "connected").length,
+    reserved: ports.filter((p) => p.status === "reserved").length,
+    faulty: ports.filter((p) => p.status === "faulty").length,
+  };
 }
 
 // ============================================

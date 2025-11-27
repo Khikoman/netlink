@@ -139,9 +139,6 @@ export function ConfirmModal({
   variant = "primary",
   isLoading = false,
 }: ConfirmModalProps) {
-  // Import Button dynamically to avoid circular dependency
-  const { Button } = require("./Button");
-
   return (
     <Modal
       isOpen={isOpen}
@@ -150,16 +147,24 @@ export function ConfirmModal({
       size="sm"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose} disabled={isLoading}>
-            {cancelText}
-          </Button>
-          <Button
-            variant={variant === "danger" ? "danger" : "primary"}
-            onClick={onConfirm}
-            isLoading={isLoading}
+          <button
+            onClick={onClose}
+            disabled={isLoading}
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50"
           >
-            {confirmText}
-          </Button>
+            {cancelText}
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={isLoading}
+            className={`px-4 py-2 text-sm font-medium rounded-lg text-white disabled:opacity-50 ${
+              variant === "danger"
+                ? "bg-red-600 hover:bg-red-700"
+                : "bg-blue-600 hover:bg-blue-700"
+            }`}
+          >
+            {isLoading ? "..." : confirmText}
+          </button>
         </>
       }
     >

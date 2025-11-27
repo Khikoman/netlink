@@ -10,15 +10,38 @@ import {
 } from "@/lib/spliceUtils";
 import { db, createSplice } from "@/lib/db";
 import { useLiveQuery } from "dexie-react-hooks";
-import type { Splice, Cable, Tray, SpliceType } from "@/types";
+import { getTechnicianName, setTechnicianName, getDefaultSpliceType, getDefaultCableCount } from "@/lib/preferences";
+import { HelpTip } from "@/components/ui/HelpTooltip";
+import { AlertCircle, ChevronDown, Layers, FolderOpen, Box } from "lucide-react";
+import type { Splice, SpliceType, Project, Enclosure, Tray } from "@/types";
 
 export default function SpliceMatrix() {
-  // State for cable selection
-  const [cableAId, setCableAId] = useState<number | null>(null);
-  const [cableBId, setCableBId] = useState<number | null>(null);
+  // ============ PROJECT/ENCLOSURE/TRAY SELECTORS ============
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [selectedEnclosureId, setSelectedEnclosureId] = useState<number | null>(null);
   const [selectedTrayId, setSelectedTrayId] = useState<number | null>(null);
 
-  // Quick mode state (for creating new cables/trays inline)
+  // Get data from database with cascading filters
+  const projects = useLiveQuery(() => db.projects.orderBy("createdAt").reverse().toArray(), []);
+  const enclosures = useLiveQuery(
+    () => selectedProjectId ? db.enclosures.where("projectId").equals(selectedProjectId).toArray() : [],
+    [selectedProjectId]
+  );
+  const trays = useLiveQuery(
+    () => selectedEnclosureId ? db.trays.where("enclosureId").equals(selectedEnclosureId).toArray() : [],
+    [selectedEnclosureId]
+  );
+  const splices = useLiveQuery(
+    () => selectedTrayId ? db.splices.where("trayId").equals(selectedTrayId).toArray() : [],
+    [selectedTrayId]
+  );
+
+  // Get selected entities for display
+  const selectedProject = projects?.find(p => p.id === selectedProjectId);
+  const selectedEnclosure = enclosures?.find(e => e.id === selectedEnclosureId);
+  const selectedTray = trays?.find(t => t.id === selectedTrayId);
+
+  // Cable state
   const [cableAName, setCableAName] = useState("Cable A");
   const [cableACount, setCableACount] = useState(144);
   const [cableBName, setCableBName] = useState("Cable B");
@@ -30,7 +53,7 @@ export default function SpliceMatrix() {
   const [batchStartB, setBatchStartB] = useState(1);
   const [batchCount, setBatchCount] = useState(12);
   const [batchType, setBatchType] = useState<SpliceType>("fusion");
-  const [technicianName, setTechnicianName] = useState("");
+  const [technicianName, setTechName] = useState("");
 
   // View state
   const [viewTube, setViewTube] = useState<number | null>(null);
@@ -42,16 +65,30 @@ export default function SpliceMatrix() {
     existing?: Splice;
   } | null>(null);
 
-  // Get data from database
-  const cables = useLiveQuery(() => db.cables.toArray(), []);
-  const trays = useLiveQuery(() => db.trays.toArray(), []);
-  const splices = useLiveQuery(
-    () =>
-      selectedTrayId
-        ? db.splices.where("trayId").equals(selectedTrayId).toArray()
-        : [],
-    [selectedTrayId]
-  );
+  // Load preferences on mount
+  useEffect(() => {
+    setTechName(getTechnicianName());
+    setBatchType(getDefaultSpliceType());
+    const defaultCount = getDefaultCableCount();
+    setCableACount(defaultCount);
+    setCableBCount(defaultCount);
+  }, []);
+
+  // Clear child selections when parent changes
+  useEffect(() => {
+    setSelectedEnclosureId(null);
+    setSelectedTrayId(null);
+  }, [selectedProjectId]);
+
+  useEffect(() => {
+    setSelectedTrayId(null);
+  }, [selectedEnclosureId]);
+
+  // Save technician name on change
+  const handleTechnicianChange = (name: string) => {
+    setTechName(name);
+    setTechnicianName(name);
+  };
 
   // Get splice for specific fiber pair
   const getSpliceForFibers = (fiberA: number, fiberB: number): Splice | undefined => {
@@ -60,13 +97,17 @@ export default function SpliceMatrix() {
 
   // Create quick splice
   const handleCellClick = async (fiberA: number, fiberB: number) => {
+    if (!selectedTrayId) {
+      alert("Please select a tray first");
+      return;
+    }
     const existing = getSpliceForFibers(fiberA, fiberB);
     setEditingSplice({ fiberA, fiberB, existing });
   };
 
   // Save splice from editor
   const handleSaveSplice = async (spliceData: Partial<Splice>) => {
-    if (!editingSplice) return;
+    if (!editingSplice || !selectedTrayId) return;
 
     const colorInfoA = getFiberInfo(editingSplice.fiberA, cableACount);
     const colorInfoB = getFiberInfo(editingSplice.fiberB, cableBCount);
@@ -74,28 +115,26 @@ export default function SpliceMatrix() {
     if (!colorInfoA || !colorInfoB) return;
 
     if (editingSplice.existing?.id) {
-      // Update existing
       await db.splices.update(editingSplice.existing.id, {
         ...spliceData,
         timestamp: new Date(),
       });
     } else {
-      // Create new
       await createSplice({
-        trayId: selectedTrayId || 0,
-        cableAId: cableAId || 0,
+        trayId: selectedTrayId,
+        cableAId: 0,
         cableAName: cableAName,
         fiberA: editingSplice.fiberA,
         tubeAColor: colorInfoA.tubeColor.name,
         fiberAColor: colorInfoA.fiberColor.name,
-        cableBId: cableBId || 0,
+        cableBId: 0,
         cableBName: cableBName,
         fiberB: editingSplice.fiberB,
         tubeBColor: colorInfoB.tubeColor.name,
         fiberBColor: colorInfoB.fiberColor.name,
         spliceType: (spliceData.spliceType as SpliceType) || "fusion",
         loss: spliceData.loss,
-        technicianName: spliceData.technicianName || "",
+        technicianName: spliceData.technicianName || technicianName,
         timestamp: new Date(),
         status: spliceData.loss ? "completed" : "pending",
         notes: spliceData.notes,
@@ -107,17 +146,21 @@ export default function SpliceMatrix() {
 
   // Batch create splices
   const handleBatchCreate = async () => {
+    if (!selectedTrayId) {
+      alert("Please select a tray first");
+      return;
+    }
     if (!technicianName.trim()) {
       alert("Please enter technician name");
       return;
     }
 
     const batchSplices = generateBatchSplices({
-      trayId: selectedTrayId || 0,
-      cableAId: cableAId || 0,
+      trayId: selectedTrayId,
+      cableAId: 0,
       cableAName,
       cableACount,
-      cableBId: cableBId || 0,
+      cableBId: 0,
       cableBName,
       cableBCount,
       startFiberA: batchStartA,
@@ -128,7 +171,6 @@ export default function SpliceMatrix() {
     });
 
     for (const splice of batchSplices) {
-      // Check if splice already exists
       const existing = getSpliceForFibers(splice.fiberA, splice.fiberB);
       if (!existing) {
         await createSplice(splice);
@@ -140,7 +182,6 @@ export default function SpliceMatrix() {
 
   // Calculate tube ranges for viewing
   const tubesA = Math.ceil(cableACount / 12);
-  const tubesB = Math.ceil(cableBCount / 12);
 
   // Get fibers to display based on tube selection
   const getFibersForTube = (tubeNum: number, cableCount: number) => {
@@ -151,83 +192,217 @@ export default function SpliceMatrix() {
 
   // Stats
   const stats = splices ? calculateSpliceStats(splices) : null;
+  const trayCapacity = selectedTray?.capacity || 24;
+  const spliceCount = splices?.length || 0;
+
+  // Check if setup is complete
+  const setupComplete = selectedProjectId && selectedEnclosureId && selectedTrayId;
 
   return (
     <div className="space-y-6">
-      {/* Header Card */}
+      {/* ============ PROJECT/ENCLOSURE/TRAY SELECTION ============ */}
       <div className="bg-white rounded-2xl shadow-lg p-6">
-        <h2 className="text-xl font-semibold text-gray-800 mb-4">Splice Matrix</h2>
-
-        {/* Cable Configuration */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-          {/* Cable A */}
-          <div className="space-y-3">
-            <label className="block text-sm font-medium text-gray-700">Cable A (Source)</label>
-            <input
-              type="text"
-              value={cableAName}
-              onChange={(e) => setCableAName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-800"
-              placeholder="Cable name"
-            />
-            <div className="flex flex-wrap gap-2">
-              {CABLE_CONFIGS.map((config) => (
-                <button
-                  key={config.count}
-                  onClick={() => setCableACount(config.count)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                    cableACount === config.count
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                  }`}
-                >
-                  {config.count}F
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Cable B */}
-          <div className="space-y-3">
-            <label className="block text-sm font-medium text-gray-700">Cable B (Destination)</label>
-            <input
-              type="text"
-              value={cableBName}
-              onChange={(e) => setCableBName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-800"
-              placeholder="Cable name"
-            />
-            <div className="flex flex-wrap gap-2">
-              {CABLE_CONFIGS.map((config) => (
-                <button
-                  key={config.count}
-                  onClick={() => setCableBCount(config.count)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                    cableBCount === config.count
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                  }`}
-                >
-                  {config.count}F
-                </button>
-              ))}
-            </div>
-          </div>
+        <div className="flex items-center gap-2 mb-4">
+          <Layers className="w-5 h-5 text-blue-600" />
+          <h2 className="text-xl font-semibold text-gray-800">Select Location</h2>
+          <HelpTip term="Tray" />
         </div>
 
-        {/* Actions */}
-        <div className="flex flex-wrap gap-3">
-          <button
-            onClick={() => setShowBatchModal(true)}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700"
-          >
-            Batch Create Splices
-          </button>
-        </div>
+        {(!projects || projects.length === 0) && (
+          <div className="p-6 bg-amber-50 border border-amber-200 rounded-xl text-center">
+            <AlertCircle className="w-10 h-10 text-amber-500 mx-auto mb-3" />
+            <h3 className="font-semibold text-gray-800 mb-2">No Projects Yet</h3>
+            <p className="text-gray-600 text-sm mb-4">
+              Create a project first to start documenting splices. Projects help organize your work by location.
+            </p>
+            <p className="text-sm text-gray-500">
+              Go to <strong>Dashboard</strong> to create your first project.
+            </p>
+          </div>
+        )}
+
+        {projects && projects.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Project Selector */}
+            <div>
+              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                <FolderOpen className="w-4 h-4" />
+                Project
+              </label>
+              <div className="relative">
+                <select
+                  value={selectedProjectId || ""}
+                  onChange={(e) => setSelectedProjectId(e.target.value ? Number(e.target.value) : null)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-white text-gray-800 appearance-none cursor-pointer focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Select project...</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+              </div>
+              {selectedProject && (
+                <p className="mt-1 text-xs text-gray-500">{selectedProject.location}</p>
+              )}
+            </div>
+
+            {/* Enclosure Selector */}
+            <div>
+              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                <Box className="w-4 h-4" />
+                Enclosure
+                <HelpTip term="Enclosure" />
+              </label>
+              <div className="relative">
+                <select
+                  value={selectedEnclosureId || ""}
+                  onChange={(e) => setSelectedEnclosureId(e.target.value ? Number(e.target.value) : null)}
+                  disabled={!selectedProjectId}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-white text-gray-800 appearance-none cursor-pointer focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400"
+                >
+                  <option value="">{selectedProjectId ? "Select enclosure..." : "Select project first"}</option>
+                  {enclosures?.map((enc) => (
+                    <option key={enc.id} value={enc.id}>
+                      {enc.name} ({enc.type})
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+              </div>
+              {enclosures?.length === 0 && selectedProjectId && (
+                <p className="mt-1 text-xs text-amber-600">No enclosures in this project</p>
+              )}
+            </div>
+
+            {/* Tray Selector */}
+            <div>
+              <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-2">
+                <Layers className="w-4 h-4" />
+                Splice Tray
+              </label>
+              <div className="relative">
+                <select
+                  value={selectedTrayId || ""}
+                  onChange={(e) => setSelectedTrayId(e.target.value ? Number(e.target.value) : null)}
+                  disabled={!selectedEnclosureId}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-white text-gray-800 appearance-none cursor-pointer focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400"
+                >
+                  <option value="">{selectedEnclosureId ? "Select tray..." : "Select enclosure first"}</option>
+                  {trays?.sort((a, b) => a.number - b.number).map((tray) => (
+                    <option key={tray.id} value={tray.id}>
+                      Tray {tray.number} (Capacity: {tray.capacity})
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+              </div>
+              {trays?.length === 0 && selectedEnclosureId && (
+                <p className="mt-1 text-xs text-amber-600">No trays in this enclosure</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Capacity Display */}
+        {setupComplete && (
+          <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-sm text-gray-600">Selected: </span>
+                <span className="font-medium text-gray-800">
+                  {selectedProject?.name} → {selectedEnclosure?.name} → Tray {selectedTray?.number}
+                </span>
+              </div>
+              <div className="text-sm">
+                <span className="text-gray-600">Capacity: </span>
+                <span className={`font-bold ${spliceCount >= trayCapacity ? "text-red-600" : "text-green-600"}`}>
+                  {spliceCount}/{trayCapacity}
+                </span>
+                <span className="text-gray-500"> splices</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
+      {/* ============ CABLE CONFIGURATION ============ */}
+      {setupComplete && (
+        <div className="bg-white rounded-2xl shadow-lg p-6">
+          <h2 className="text-xl font-semibold text-gray-800 mb-4">Cable Configuration</h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            {/* Cable A */}
+            <div className="space-y-3">
+              <label className="block text-sm font-medium text-gray-700">Cable A (Source)</label>
+              <input
+                type="text"
+                value={cableAName}
+                onChange={(e) => setCableAName(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-800"
+                placeholder="Cable name"
+              />
+              <div className="flex flex-wrap gap-2">
+                {CABLE_CONFIGS.map((config) => (
+                  <button
+                    key={config.count}
+                    onClick={() => setCableACount(config.count)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                      cableACount === config.count
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
+                  >
+                    {config.count}F
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Cable B */}
+            <div className="space-y-3">
+              <label className="block text-sm font-medium text-gray-700">Cable B (Destination)</label>
+              <input
+                type="text"
+                value={cableBName}
+                onChange={(e) => setCableBName(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-800"
+                placeholder="Cable name"
+              />
+              <div className="flex flex-wrap gap-2">
+                {CABLE_CONFIGS.map((config) => (
+                  <button
+                    key={config.count}
+                    onClick={() => setCableBCount(config.count)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                      cableBCount === config.count
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
+                  >
+                    {config.count}F
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => setShowBatchModal(true)}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700"
+            >
+              Batch Create Splices
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Stats Card */}
-      {stats && stats.total > 0 && (
+      {setupComplete && stats && stats.total > 0 && (
         <div className="bg-white rounded-2xl shadow-lg p-6">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Splice Statistics</h3>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -260,9 +435,12 @@ export default function SpliceMatrix() {
       )}
 
       {/* Tube Selection */}
-      <div className="bg-white rounded-2xl shadow-lg p-6">
-        <h3 className="text-lg font-semibold text-gray-800 mb-4">Select Tube View</h3>
-        <div className="grid grid-cols-2 gap-4">
+      {setupComplete && (
+        <div className="bg-white rounded-2xl shadow-lg p-6">
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">
+            Select Tube View
+            <HelpTip term="Buffer Tube" />
+          </h3>
           <div>
             <label className="block text-sm font-medium text-gray-600 mb-2">
               {cableAName} Tube
@@ -274,7 +452,7 @@ export default function SpliceMatrix() {
                   <button
                     key={tube}
                     onClick={() => setViewTube(tube)}
-                    className={`w-10 h-10 rounded-lg flex items-center justify-center text-sm font-medium transition-all ${
+                    className={`w-12 h-12 rounded-lg flex items-center justify-center text-sm font-medium transition-all ${
                       viewTube === tube ? "ring-2 ring-blue-500 ring-offset-2" : ""
                     }`}
                     style={{
@@ -289,10 +467,10 @@ export default function SpliceMatrix() {
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Matrix View */}
-      {viewTube && (
+      {setupComplete && viewTube && (
         <div className="bg-white rounded-2xl shadow-lg p-6 overflow-x-auto">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">
             Tube {viewTube} - Fibers {(viewTube - 1) * 12 + 1} to {Math.min(viewTube * 12, cableACount)}
@@ -301,7 +479,7 @@ export default function SpliceMatrix() {
           <div className="min-w-max">
             {/* Header row - Cable B fibers */}
             <div className="flex gap-1 mb-1">
-              <div className="w-16 h-10"></div> {/* Corner cell */}
+              <div className="w-16 h-10"></div>
               {getFibersForTube(viewTube, cableBCount).map((fiberB) => {
                 const colorInfo = getFiberInfo(fiberB, cableBCount);
                 return (
@@ -324,7 +502,6 @@ export default function SpliceMatrix() {
               const colorInfoA = getFiberInfo(fiberA, cableACount);
               return (
                 <div key={fiberA} className="flex gap-1 mb-1">
-                  {/* Row header - Cable A fiber */}
                   <div
                     className="w-16 h-12 flex items-center justify-center text-xs font-medium rounded"
                     style={{
@@ -335,7 +512,6 @@ export default function SpliceMatrix() {
                     {fiberA}
                   </div>
 
-                  {/* Matrix cells */}
                   {getFibersForTube(viewTube, cableBCount).map((fiberB) => {
                     const splice = getSpliceForFibers(fiberA, fiberB);
                     const lossStatus = splice?.loss !== undefined
@@ -396,7 +572,7 @@ export default function SpliceMatrix() {
       {/* Batch Create Modal */}
       {showBatchModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-md w-full">
+          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">Batch Create Splices</h3>
 
             <div className="space-y-4">
@@ -444,7 +620,10 @@ export default function SpliceMatrix() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Splice Type</label>
+                <label className="flex items-center gap-1 text-sm font-medium text-gray-700 mb-1">
+                  Splice Type
+                  <HelpTip term="Fusion Splice" />
+                </label>
                 <select
                   value={batchType}
                   onChange={(e) => setBatchType(e.target.value as SpliceType)}
@@ -462,9 +641,9 @@ export default function SpliceMatrix() {
                 <input
                   type="text"
                   value={technicianName}
-                  onChange={(e) => setTechnicianName(e.target.value)}
+                  onChange={(e) => handleTechnicianChange(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-800"
-                  placeholder="Your name"
+                  placeholder="Your name (saved for future use)"
                 />
               </div>
 
@@ -507,6 +686,7 @@ export default function SpliceMatrix() {
           cableACount={cableACount}
           cableBCount={cableBCount}
           existing={editingSplice.existing}
+          defaultTechnicianName={technicianName}
           onSave={handleSaveSplice}
           onClose={() => setEditingSplice(null)}
           onDelete={async () => {
@@ -530,6 +710,7 @@ function SpliceEditorModal({
   cableACount,
   cableBCount,
   existing,
+  defaultTechnicianName,
   onSave,
   onClose,
   onDelete,
@@ -541,13 +722,14 @@ function SpliceEditorModal({
   cableACount: number;
   cableBCount: number;
   existing?: Splice;
+  defaultTechnicianName: string;
   onSave: (data: Partial<Splice>) => void;
   onClose: () => void;
   onDelete: () => void;
 }) {
-  const [spliceType, setSpliceType] = useState<SpliceType>(existing?.spliceType || "fusion");
+  const [spliceType, setSpliceType] = useState<SpliceType>(existing?.spliceType || getDefaultSpliceType());
   const [loss, setLoss] = useState(existing?.loss?.toString() || "");
-  const [technicianName, setTechnicianName] = useState(existing?.technicianName || "");
+  const [techName, setTechName] = useState(existing?.technicianName || defaultTechnicianName);
   const [notes, setNotes] = useState(existing?.notes || "");
 
   const colorInfoA = getFiberInfo(fiberA, cableACount);
@@ -556,9 +738,15 @@ function SpliceEditorModal({
   const lossNum = loss ? parseFloat(loss) : undefined;
   const lossStatus = lossNum !== undefined ? validateSpliceLoss(lossNum, spliceType) : null;
 
+  // Save technician name when changed
+  const handleTechChange = (name: string) => {
+    setTechName(name);
+    setTechnicianName(name);
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl p-6 max-w-lg w-full">
+      <div className="bg-white rounded-2xl shadow-xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
         <h3 className="text-lg font-semibold text-gray-800 mb-4">
           {existing ? "Edit Splice" : "Create Splice"}
         </h3>
@@ -609,7 +797,10 @@ function SpliceEditorModal({
         {/* Form Fields */}
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Splice Type</label>
+            <label className="flex items-center gap-1 text-sm font-medium text-gray-700 mb-1">
+              Splice Type
+              <HelpTip term="Fusion Splice" />
+            </label>
             <select
               value={spliceType}
               onChange={(e) => setSpliceType(e.target.value as SpliceType)}
@@ -621,7 +812,10 @@ function SpliceEditorModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Loss (dB)</label>
+            <label className="flex items-center gap-1 text-sm font-medium text-gray-700 mb-1">
+              Loss (dB)
+              <HelpTip term="Acceptable Loss" />
+            </label>
             <input
               type="number"
               step="0.01"
@@ -652,10 +846,10 @@ function SpliceEditorModal({
             <label className="block text-sm font-medium text-gray-700 mb-1">Technician Name</label>
             <input
               type="text"
-              value={technicianName}
-              onChange={(e) => setTechnicianName(e.target.value)}
+              value={techName}
+              onChange={(e) => handleTechChange(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-800"
-              placeholder="Your name"
+              placeholder="Your name (saved for future use)"
             />
           </div>
 
@@ -693,7 +887,7 @@ function SpliceEditorModal({
               onSave({
                 spliceType,
                 loss: lossNum,
-                technicianName,
+                technicianName: techName,
                 notes,
               })
             }

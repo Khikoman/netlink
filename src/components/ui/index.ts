@@ -25,6 +25,9 @@ export type { AlertVariant, BadgeVariant } from "./Alert";
 export { Spinner, LoadingOverlay, LoadingState, Skeleton, CardSkeleton } from "./Spinner";
 export type { SpinnerSize } from "./Spinner";
 
+// Help Tooltips
+export { HelpTooltip, HelpTip, LabelWithHelp, HELP_CONTENT } from "./HelpTooltip";
+
 // Empty States
 export {
   EmptyState,

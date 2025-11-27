@@ -1,5 +1,5 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "./index";
+import { db, getOLTHierarchyStats, getLCPHierarchyStats, getNAPStats } from "./index";
 import type {
   Project,
   Enclosure,
@@ -10,6 +10,8 @@ import type {
   LossBudgetResult,
   MapNode,
   MapRoute,
+  OLT,
+  OLTPonPort,
 } from "@/types";
 
 // ============================================
@@ -203,6 +205,126 @@ export function useNetworkMap(projectId: number | undefined) {
     const routes = await db.mapRoutes.where("projectId").equals(projectId).toArray();
     return { nodes, routes };
   }, [projectId]);
+}
+
+// ============================================
+// OLT HOOKS
+// ============================================
+
+export function useOLTs(projectId: number | undefined) {
+  return useLiveQuery(
+    () => (projectId ? db.olts.where("projectId").equals(projectId).toArray() : []),
+    [projectId]
+  );
+}
+
+export function useOLT(id: number | undefined) {
+  return useLiveQuery(() => (id ? db.olts.get(id) : undefined), [id]);
+}
+
+export function useOLTPonPorts(oltId: number | undefined) {
+  return useLiveQuery(
+    async () => {
+      if (!oltId) return [];
+      const ports = await db.oltPonPorts.where("oltId").equals(oltId).toArray();
+      return ports.sort((a, b) => a.portNumber - b.portNumber);
+    },
+    [oltId]
+  );
+}
+
+export function useOLTPonPort(id: number | undefined) {
+  return useLiveQuery(() => (id ? db.oltPonPorts.get(id) : undefined), [id]);
+}
+
+// ============================================
+// HIERARCHY HOOKS
+// ============================================
+
+export function useLCPsByOLT(oltId: number | undefined) {
+  return useLiveQuery(
+    async () => {
+      if (!oltId) return [];
+      return db.enclosures
+        .where("parentId")
+        .equals(oltId)
+        .filter((e) => e.parentType === "olt" && (e.type === "lcp" || e.type === "fdt"))
+        .toArray();
+    },
+    [oltId]
+  );
+}
+
+export function useNAPsByLCP(lcpId: number | undefined) {
+  return useLiveQuery(
+    async () => {
+      if (!lcpId) return [];
+      return db.enclosures
+        .where("parentId")
+        .equals(lcpId)
+        .filter((e) => e.parentType === "lcp" && (e.type === "nap" || e.type === "fat"))
+        .toArray();
+    },
+    [lcpId]
+  );
+}
+
+export function useOrphanedLCPs(projectId: number | undefined) {
+  return useLiveQuery(
+    async () => {
+      if (!projectId) return [];
+      return db.enclosures
+        .where("projectId")
+        .equals(projectId)
+        .filter((e) => (e.type === "lcp" || e.type === "fdt") && !e.parentId)
+        .toArray();
+    },
+    [projectId]
+  );
+}
+
+export function useOrphanedNAPs(projectId: number | undefined) {
+  return useLiveQuery(
+    async () => {
+      if (!projectId) return [];
+      return db.enclosures
+        .where("projectId")
+        .equals(projectId)
+        .filter((e) => (e.type === "nap" || e.type === "fat") && !e.parentId)
+        .toArray();
+    },
+    [projectId]
+  );
+}
+
+export function useOLTHierarchyStats(oltId: number | undefined) {
+  return useLiveQuery(
+    async () => {
+      if (!oltId) return null;
+      return getOLTHierarchyStats(oltId);
+    },
+    [oltId]
+  );
+}
+
+export function useLCPHierarchyStats(lcpId: number | undefined) {
+  return useLiveQuery(
+    async () => {
+      if (!lcpId) return null;
+      return getLCPHierarchyStats(lcpId);
+    },
+    [lcpId]
+  );
+}
+
+export function useNAPPortStats(napId: number | undefined) {
+  return useLiveQuery(
+    async () => {
+      if (!napId) return null;
+      return getNAPStats(napId);
+    },
+    [napId]
+  );
 }
 
 // ============================================

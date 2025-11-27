@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode } from "react";
+import { type ReactNode, isValidElement, type ElementType } from "react";
 import {
   FolderOpen,
   Package,
@@ -23,6 +23,19 @@ interface EmptyStateProps {
   className?: string;
 }
 
+// Check if something is a React component (including forwardRef)
+function isReactComponent(value: unknown): value is ElementType {
+  if (!value) return false;
+  // Check for function components
+  if (typeof value === "function") return true;
+  // Check for forwardRef components (they have $$typeof and render properties)
+  if (typeof value === "object" && value !== null) {
+    const obj = value as { $$typeof?: symbol; render?: unknown };
+    return obj.$$typeof !== undefined || typeof obj.render === "function";
+  }
+  return false;
+}
+
 export function EmptyState({
   icon: IconProp,
   title,
@@ -30,14 +43,22 @@ export function EmptyState({
   action,
   className = "",
 }: EmptyStateProps) {
-  // Handle both ReactNode and LucideIcon
-  const IconComponent = IconProp as LucideIcon;
-  const iconElement =
-    typeof IconProp === "function" ? (
-      <IconComponent className="h-12 w-12 text-gray-300" />
-    ) : (
-      IconProp || <FolderOpen className="h-12 w-12 text-gray-300" />
-    );
+  // Handle both ReactNode and LucideIcon (including forwardRef components)
+  let iconElement: ReactNode;
+
+  if (!IconProp) {
+    iconElement = <FolderOpen className="h-12 w-12 text-gray-300" />;
+  } else if (isValidElement(IconProp)) {
+    // It's already a valid React element
+    iconElement = IconProp;
+  } else if (isReactComponent(IconProp)) {
+    // It's a component (function or forwardRef)
+    const IconComponent = IconProp as unknown as LucideIcon;
+    iconElement = <IconComponent className="h-12 w-12 text-gray-300" />;
+  } else {
+    // Fallback
+    iconElement = <FolderOpen className="h-12 w-12 text-gray-300" />;
+  }
 
   return (
     <div

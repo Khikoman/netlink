@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Stage, Layer, Circle, Line, Text, Group, Rect } from "react-konva";
 import { useLiveQuery } from "dexie-react-hooks";
+import dynamic from "next/dynamic";
 import {
   db,
   createMapNode,
@@ -13,6 +14,17 @@ import {
 } from "@/lib/db";
 import { useProjects } from "@/lib/db/hooks";
 import type { MapNode, MapRoute, MapNodeType } from "@/types";
+import { MapPin, Grid3X3, Loader2 } from "lucide-react";
+
+// Dynamically import GpsMap to avoid SSR issues
+const GpsMap = dynamic(() => import("@/components/map/GpsMap"), {
+  ssr: false,
+  loading: () => (
+    <div className="h-[500px] bg-gray-100 rounded-lg flex items-center justify-center">
+      <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+    </div>
+  ),
+});
 
 const NODE_TYPES: { value: MapNodeType; label: string; color: string }[] = [
   { value: "enclosure", label: "Enclosure", color: "#3b82f6" },
@@ -31,6 +43,7 @@ export default function NetworkMap() {
   const [editMode, setEditMode] = useState<"select" | "node" | "route">("select");
   const [nodeType, setNodeType] = useState<MapNodeType>("enclosure");
   const [routeStartNode, setRouteStartNode] = useState<number | null>(null);
+  const [viewMode, setViewMode] = useState<"gps" | "schematic">("gps");
 
   // Form state
   const [showNodeForm, setShowNodeForm] = useState(false);
@@ -206,7 +219,7 @@ export default function NetworkMap() {
 
   return (
     <div className="space-y-4">
-      {/* Project Selection */}
+      {/* Project Selection & View Toggle */}
       <div className="bg-white rounded-2xl shadow-lg p-4">
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex-1 min-w-[200px]">
@@ -225,7 +238,36 @@ export default function NetworkMap() {
             </select>
           </div>
 
+          {/* View Mode Toggle */}
           {selectedProjectId && (
+            <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-lg">
+              <button
+                onClick={() => setViewMode("gps")}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-colors ${
+                  viewMode === "gps"
+                    ? "bg-white text-blue-600 shadow-sm"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                <MapPin className="w-4 h-4" />
+                GPS Map
+              </button>
+              <button
+                onClick={() => setViewMode("schematic")}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-colors ${
+                  viewMode === "schematic"
+                    ? "bg-white text-blue-600 shadow-sm"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                <Grid3X3 className="w-4 h-4" />
+                Schematic
+              </button>
+            </div>
+          )}
+
+          {/* Schematic Edit Tools - Only show in schematic view */}
+          {selectedProjectId && viewMode === "schematic" && (
             <>
               <div className="flex items-center gap-2">
                 <button
@@ -296,123 +338,140 @@ export default function NetworkMap() {
         </div>
       </div>
 
-      {/* Canvas */}
+      {/* Map Content */}
       {selectedProjectId ? (
-        <div className="bg-white rounded-2xl shadow-lg p-4">
-          <div
-            ref={containerRef}
-            className="border-2 border-gray-200 rounded-xl overflow-hidden bg-gray-50"
-          >
-            <Stage
-              width={stageSize.width}
-              height={stageSize.height}
-              onClick={handleStageClick}
-              onWheel={handleWheel}
-              draggable
-              x={stagePos.x}
-              y={stagePos.y}
-              scaleX={stageScale}
-              scaleY={stageScale}
-              onDragEnd={(e) => {
-                setStagePos({ x: e.target.x(), y: e.target.y() });
-              }}
-            >
-              <Layer>
-                {/* Grid */}
-                {Array.from({ length: 20 }).map((_, i) => (
-                  <Line
-                    key={`h-${i}`}
-                    points={[0, i * 50, 1000, i * 50]}
-                    stroke="#e5e7eb"
-                    strokeWidth={1}
-                  />
-                ))}
-                {Array.from({ length: 20 }).map((_, i) => (
-                  <Line
-                    key={`v-${i}`}
-                    points={[i * 50, 0, i * 50, 1000]}
-                    stroke="#e5e7eb"
-                    strokeWidth={1}
-                  />
-                ))}
+        <>
+          {/* GPS Map View */}
+          {viewMode === "gps" && (
+            <div className="bg-white rounded-2xl shadow-lg p-4">
+              <div className="h-[500px]">
+                <GpsMap projectId={selectedProjectId} />
+              </div>
+              <div className="mt-3 text-sm text-gray-500">
+                Enclosures with GPS coordinates are shown on the map. Add GPS to enclosures in the Enclosures tab.
+              </div>
+            </div>
+          )}
 
-                {/* Routes */}
-                {routes?.map((route) => {
-                  const points = getRoutePoints(route);
-                  if (points.length < 4) return null;
-                  return (
-                    <Line
-                      key={route.id}
-                      points={points}
-                      stroke={selectedRoute?.id === route.id ? "#3b82f6" : route.color || "#6b7280"}
-                      strokeWidth={selectedRoute?.id === route.id ? 4 : 3}
-                      onClick={() => handleRouteClick(route)}
-                      onTap={() => handleRouteClick(route)}
-                    />
-                  );
-                })}
+          {/* Schematic Canvas View */}
+          {viewMode === "schematic" && (
+            <div className="bg-white rounded-2xl shadow-lg p-4">
+              <div
+                ref={containerRef}
+                className="border-2 border-gray-200 rounded-xl overflow-hidden bg-gray-50"
+              >
+                <Stage
+                  width={stageSize.width}
+                  height={stageSize.height}
+                  onClick={handleStageClick}
+                  onWheel={handleWheel}
+                  draggable
+                  x={stagePos.x}
+                  y={stagePos.y}
+                  scaleX={stageScale}
+                  scaleY={stageScale}
+                  onDragEnd={(e) => {
+                    setStagePos({ x: e.target.x(), y: e.target.y() });
+                  }}
+                >
+                  <Layer>
+                    {/* Grid */}
+                    {Array.from({ length: 20 }).map((_, i) => (
+                      <Line
+                        key={`h-${i}`}
+                        points={[0, i * 50, 1000, i * 50]}
+                        stroke="#e5e7eb"
+                        strokeWidth={1}
+                      />
+                    ))}
+                    {Array.from({ length: 20 }).map((_, i) => (
+                      <Line
+                        key={`v-${i}`}
+                        points={[i * 50, 0, i * 50, 1000]}
+                        stroke="#e5e7eb"
+                        strokeWidth={1}
+                      />
+                    ))}
 
-                {/* Nodes */}
-                {nodes?.map((node) => (
-                  <Group
-                    key={node.id}
-                    x={node.x}
-                    y={node.y}
-                    draggable={editMode === "select"}
-                    onDragEnd={(e) => handleNodeDrag(node, e.target.x(), e.target.y())}
-                    onClick={() => handleNodeClick(node)}
-                    onTap={() => handleNodeClick(node)}
-                  >
-                    <Circle
-                      radius={selectedNode?.id === node.id ? 22 : 20}
-                      fill={node.color || getNodeColor(node.type)}
-                      stroke={selectedNode?.id === node.id ? "#1d4ed8" : "#fff"}
-                      strokeWidth={selectedNode?.id === node.id ? 4 : 2}
-                      shadowColor="black"
-                      shadowBlur={5}
-                      shadowOpacity={0.3}
-                    />
-                    <Text
-                      text={node.label}
-                      fontSize={11}
-                      fill="#374151"
-                      y={25}
-                      offsetX={node.label.length * 2.5}
-                      fontStyle="bold"
-                    />
-                  </Group>
-                ))}
-
-                {/* Route start indicator */}
-                {editMode === "route" && routeStartNode && (
-                  <>
-                    {(() => {
-                      const startNode = nodes?.find((n) => n.id === routeStartNode);
-                      if (!startNode) return null;
+                    {/* Routes */}
+                    {routes?.map((route) => {
+                      const points = getRoutePoints(route);
+                      if (points.length < 4) return null;
                       return (
-                        <Circle
-                          x={startNode.x}
-                          y={startNode.y}
-                          radius={28}
-                          stroke="#8b5cf6"
-                          strokeWidth={3}
-                          dash={[5, 5]}
+                        <Line
+                          key={route.id}
+                          points={points}
+                          stroke={selectedRoute?.id === route.id ? "#3b82f6" : route.color || "#6b7280"}
+                          strokeWidth={selectedRoute?.id === route.id ? 4 : 3}
+                          onClick={() => handleRouteClick(route)}
+                          onTap={() => handleRouteClick(route)}
                         />
                       );
-                    })()}
-                  </>
-                )}
-              </Layer>
-            </Stage>
-          </div>
+                    })}
 
-          {/* Instructions */}
-          <div className="mt-3 text-sm text-gray-500">
-            {editMode === "select" && "Click and drag nodes to move them. Scroll to zoom."}
-            {editMode === "node" && "Click on the canvas to place a new node."}
-            {editMode === "route" && "Click on two nodes to create a route between them."}
-          </div>
-        </div>
+                    {/* Nodes */}
+                    {nodes?.map((node) => (
+                      <Group
+                        key={node.id}
+                        x={node.x}
+                        y={node.y}
+                        draggable={editMode === "select"}
+                        onDragEnd={(e) => handleNodeDrag(node, e.target.x(), e.target.y())}
+                        onClick={() => handleNodeClick(node)}
+                        onTap={() => handleNodeClick(node)}
+                      >
+                        <Circle
+                          radius={selectedNode?.id === node.id ? 22 : 20}
+                          fill={node.color || getNodeColor(node.type)}
+                          stroke={selectedNode?.id === node.id ? "#1d4ed8" : "#fff"}
+                          strokeWidth={selectedNode?.id === node.id ? 4 : 2}
+                          shadowColor="black"
+                          shadowBlur={5}
+                          shadowOpacity={0.3}
+                        />
+                        <Text
+                          text={node.label}
+                          fontSize={11}
+                          fill="#374151"
+                          y={25}
+                          offsetX={node.label.length * 2.5}
+                          fontStyle="bold"
+                        />
+                      </Group>
+                    ))}
+
+                    {/* Route start indicator */}
+                    {editMode === "route" && routeStartNode && (
+                      <>
+                        {(() => {
+                          const startNode = nodes?.find((n) => n.id === routeStartNode);
+                          if (!startNode) return null;
+                          return (
+                            <Circle
+                              x={startNode.x}
+                              y={startNode.y}
+                              radius={28}
+                              stroke="#8b5cf6"
+                              strokeWidth={3}
+                              dash={[5, 5]}
+                            />
+                          );
+                        })()}
+                      </>
+                    )}
+                  </Layer>
+                </Stage>
+              </div>
+
+              {/* Instructions */}
+              <div className="mt-3 text-sm text-gray-500">
+                {editMode === "select" && "Click and drag nodes to move them. Scroll to zoom."}
+                {editMode === "node" && "Click on the canvas to place a new node."}
+                {editMode === "route" && "Click on two nodes to create a route between them."}
+              </div>
+            </div>
+          )}
+        </>
       ) : (
         <div className="bg-blue-50 rounded-2xl p-8 text-center">
           <h3 className="font-semibold text-blue-900 mb-2">Network Map</h3>
@@ -423,8 +482,8 @@ export default function NetworkMap() {
         </div>
       )}
 
-      {/* Selected Node Panel */}
-      {selectedNode && (
+      {/* Selected Node Panel - Only in schematic mode */}
+      {selectedNode && viewMode === "schematic" && (
         <div className="bg-white rounded-2xl shadow-lg p-4">
           <h3 className="font-semibold text-gray-800 mb-4">Edit Node</h3>
           <div className="space-y-4">
@@ -471,8 +530,8 @@ export default function NetworkMap() {
         </div>
       )}
 
-      {/* Selected Route Panel */}
-      {selectedRoute && (
+      {/* Selected Route Panel - Only in schematic mode */}
+      {selectedRoute && viewMode === "schematic" && (
         <div className="bg-white rounded-2xl shadow-lg p-4">
           <h3 className="font-semibold text-gray-800 mb-4">Route</h3>
           <div className="flex items-center gap-4">
@@ -492,21 +551,23 @@ export default function NetworkMap() {
         </div>
       )}
 
-      {/* Legend */}
-      <div className="bg-white rounded-2xl shadow-lg p-4">
-        <h3 className="font-semibold text-gray-800 mb-3">Legend</h3>
-        <div className="flex flex-wrap gap-4">
-          {NODE_TYPES.map((type) => (
-            <div key={type.value} className="flex items-center gap-2">
-              <div
-                className="w-4 h-4 rounded-full"
-                style={{ backgroundColor: type.color }}
-              ></div>
-              <span className="text-sm text-gray-600">{type.label}</span>
-            </div>
-          ))}
+      {/* Legend - Only in schematic mode */}
+      {selectedProjectId && viewMode === "schematic" && (
+        <div className="bg-white rounded-2xl shadow-lg p-4">
+          <h3 className="font-semibold text-gray-800 mb-3">Legend</h3>
+          <div className="flex flex-wrap gap-4">
+            {NODE_TYPES.map((type) => (
+              <div key={type.value} className="flex items-center gap-2">
+                <div
+                  className="w-4 h-4 rounded-full"
+                  style={{ backgroundColor: type.color }}
+                ></div>
+                <span className="text-sm text-gray-600">{type.label}</span>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

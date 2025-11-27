@@ -3,6 +3,7 @@
 import { useState } from "react";
 import dynamic from "next/dynamic";
 import {
+  Home,
   Wrench,
   Link2,
   BarChart3,
@@ -11,6 +12,10 @@ import {
   Menu,
   X,
   Zap,
+  Settings,
+  GitBranch,
+  Network,
+  Server,
 } from "lucide-react";
 import { CardSkeleton } from "@/components/ui";
 
@@ -19,6 +24,9 @@ import FiberLookup from "@/components/fiber/FiberLookup";
 import ReverseLookup from "@/components/fiber/ReverseLookup";
 import CableOverview from "@/components/fiber/CableOverview";
 import ColorReference from "@/components/fiber/ColorReference";
+
+// Dashboard
+import Dashboard from "@/components/Dashboard";
 
 // Dynamically import heavy components to reduce initial bundle
 const SpliceMatrix = dynamic(() => import("@/components/splice/SpliceMatrix"), {
@@ -40,16 +48,32 @@ const NetworkMap = dynamic(() => import("@/components/map/NetworkMap"), {
   loading: () => <CardSkeleton />,
   ssr: false, // Konva doesn't work with SSR
 });
+const ProjectWizard = dynamic(() => import("@/components/ProjectWizard"), {
+  loading: () => <CardSkeleton />,
+});
+const LCPManager = dynamic(() => import("@/components/lcp/LCPManager"), {
+  loading: () => <CardSkeleton />,
+});
+const NAPManager = dynamic(() => import("@/components/nap/NAPManager"), {
+  loading: () => <CardSkeleton />,
+});
+const HierarchyBrowser = dynamic(() => import("@/components/hierarchy/HierarchyBrowser"), {
+  loading: () => <CardSkeleton />,
+});
 
 // Navigation structure
-type TabGroup = "tools" | "splice" | "analysis" | "inventory" | "map";
+type TabGroup = "home" | "tools" | "splice" | "distribution" | "hierarchy" | "analysis" | "inventory" | "map";
 type Tab =
+  | "dashboard"
   | "lookup"
   | "reverse"
   | "overview"
   | "reference"
   | "matrix"
   | "enclosures"
+  | "lcp"
+  | "nap"
+  | "hierarchyBrowser"
   | "lossBudget"
   | "otdr"
   | "stock"
@@ -62,6 +86,8 @@ interface TabConfig {
 }
 
 const tabs: TabConfig[] = [
+  // Home group
+  { id: "dashboard", label: "Dashboard", group: "home" },
   // Tools group
   { id: "lookup", label: "Fiber Lookup", group: "tools" },
   { id: "reverse", label: "Color to #", group: "tools" },
@@ -70,6 +96,11 @@ const tabs: TabConfig[] = [
   // Splice group
   { id: "matrix", label: "Splice Matrix", group: "splice" },
   { id: "enclosures", label: "Enclosures", group: "splice" },
+  // Distribution group (LCP/NAP) - standalone management
+  { id: "lcp", label: "LCP", group: "distribution" },
+  { id: "nap", label: "NAP", group: "distribution" },
+  // Hierarchy group - OLT → LCP → NAP drill-down
+  { id: "hierarchyBrowser", label: "Network Hierarchy", group: "hierarchy" },
   // Analysis group
   { id: "lossBudget", label: "Loss Budget", group: "analysis" },
   { id: "otdr", label: "OTDR Viewer", group: "analysis" },
@@ -80,19 +111,25 @@ const tabs: TabConfig[] = [
 ];
 
 const groupConfig: Record<TabGroup, { label: string; icon: React.ReactNode }> = {
+  home: { label: "Home", icon: <Home className="w-4 h-4" /> },
   tools: { label: "Tools", icon: <Wrench className="w-4 h-4" /> },
   splice: { label: "Splice", icon: <Link2 className="w-4 h-4" /> },
+  distribution: { label: "LCP/NAP", icon: <GitBranch className="w-4 h-4" /> },
+  hierarchy: { label: "Hierarchy", icon: <Network className="w-4 h-4" /> },
   analysis: { label: "Analysis", icon: <BarChart3 className="w-4 h-4" /> },
   inventory: { label: "Inventory", icon: <Package className="w-4 h-4" /> },
   map: { label: "Map", icon: <Map className="w-4 h-4" /> },
 };
 
-const groups: TabGroup[] = ["tools", "splice", "analysis", "inventory", "map"];
+const groups: TabGroup[] = ["home", "tools", "splice", "distribution", "hierarchy", "analysis", "inventory", "map"];
 
-export default function Home() {
-  const [activeGroup, setActiveGroup] = useState<TabGroup>("tools");
-  const [activeTab, setActiveTab] = useState<Tab>("lookup");
+export default function HomePage() {
+  // Start with Dashboard as default
+  const [activeGroup, setActiveGroup] = useState<TabGroup>("home");
+  const [activeTab, setActiveTab] = useState<Tab>("dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
 
   const groupTabs = tabs.filter((t) => t.group === activeGroup);
 
@@ -103,21 +140,56 @@ export default function Home() {
     setMobileMenuOpen(false);
   };
 
+  const handleNavigate = (tab: string) => {
+    const tabConfig = tabs.find((t) => t.id === tab);
+    if (tabConfig) {
+      setActiveGroup(tabConfig.group);
+      setActiveTab(tabConfig.id);
+    }
+  };
+
+  const handleSelectProject = (projectId: number) => {
+    setSelectedProjectId(projectId);
+  };
+
+  const handleWizardComplete = (projectId: number, nextAction: string) => {
+    setSelectedProjectId(projectId);
+    setShowWizard(false);
+
+    // Navigate based on what user chose
+    switch (nextAction) {
+      case "splice":
+        handleNavigate("matrix");
+        break;
+      case "enclosures":
+        handleNavigate("enclosures");
+        break;
+      case "map":
+        handleNavigate("network");
+        break;
+      default:
+        handleNavigate("dashboard");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 to-blue-50">
       {/* Header */}
       <header className="bg-white shadow-sm sticky top-0 z-30">
         <div className="max-w-6xl mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+            <button
+              onClick={() => handleNavigate("dashboard")}
+              className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+            >
               <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center">
                 <Zap className="w-6 h-6 text-white" />
               </div>
-              <div>
+              <div className="text-left">
                 <h1 className="text-xl font-bold text-gray-900">NetLink</h1>
                 <p className="text-xs text-gray-500 hidden sm:block">OSP Fiber Management</p>
               </div>
-            </div>
+            </button>
 
             {/* Mobile menu button */}
             <button
@@ -146,7 +218,7 @@ export default function Home() {
             className="absolute inset-0 bg-black/50"
             onClick={() => setMobileMenuOpen(false)}
           />
-          <nav className="absolute top-[64px] left-0 right-0 bg-white shadow-lg border-t">
+          <nav className="absolute top-[64px] left-0 right-0 bg-white shadow-lg border-t max-h-[calc(100vh-64px)] overflow-y-auto">
             <div className="p-4 space-y-2">
               {groups.map((group) => {
                 const isActive = activeGroup === group;
@@ -265,6 +337,14 @@ export default function Home() {
 
       {/* Main Content */}
       <main className="max-w-6xl mx-auto px-4 py-6">
+        {/* Dashboard */}
+        {activeTab === "dashboard" && (
+          <Dashboard
+            onNavigate={handleNavigate}
+            onSelectProject={handleSelectProject}
+          />
+        )}
+
         {/* Tools */}
         {activeTab === "lookup" && <FiberLookup />}
         {activeTab === "reverse" && <ReverseLookup />}
@@ -274,6 +354,45 @@ export default function Home() {
         {/* Splice */}
         {activeTab === "matrix" && <SpliceMatrix />}
         {activeTab === "enclosures" && <EnclosureManager />}
+
+        {/* Distribution (LCP/NAP) */}
+        {activeTab === "lcp" && selectedProjectId && <LCPManager projectId={selectedProjectId} />}
+        {activeTab === "nap" && selectedProjectId && <NAPManager projectId={selectedProjectId} />}
+        {(activeTab === "lcp" || activeTab === "nap") && !selectedProjectId && (
+          <div className="text-center py-12 bg-white rounded-2xl shadow-lg">
+            <GitBranch className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+            <h3 className="text-lg font-medium text-gray-700 mb-2">Select a Project First</h3>
+            <p className="text-gray-500 mb-4">
+              Please select a project from the Dashboard to manage LCP/NAP
+            </p>
+            <button
+              onClick={() => handleNavigate("dashboard")}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Go to Dashboard
+            </button>
+          </div>
+        )}
+
+        {/* Hierarchy Browser - OLT → LCP → NAP */}
+        {activeTab === "hierarchyBrowser" && selectedProjectId && (
+          <HierarchyBrowser projectId={selectedProjectId} />
+        )}
+        {activeTab === "hierarchyBrowser" && !selectedProjectId && (
+          <div className="text-center py-12 bg-white rounded-2xl shadow-lg">
+            <Network className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+            <h3 className="text-lg font-medium text-gray-700 mb-2">Select a Project First</h3>
+            <p className="text-gray-500 mb-4">
+              Please select a project from the Dashboard to browse network hierarchy
+            </p>
+            <button
+              onClick={() => handleNavigate("dashboard")}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Go to Dashboard
+            </button>
+          </div>
+        )}
 
         {/* Analysis */}
         {activeTab === "lossBudget" && <LossBudgetCalculator />}
@@ -285,6 +404,14 @@ export default function Home() {
         {/* Map */}
         {activeTab === "network" && <NetworkMap />}
       </main>
+
+      {/* Project Wizard Modal */}
+      {showWizard && (
+        <ProjectWizard
+          onComplete={handleWizardComplete}
+          onCancel={() => setShowWizard(false)}
+        />
+      )}
 
       {/* Footer */}
       <footer className="bg-white border-t mt-8">

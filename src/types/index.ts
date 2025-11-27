@@ -14,11 +14,62 @@ export interface Project {
   status: "active" | "completed" | "archived";
 }
 
+// ============================================
+// OLT (Optical Line Terminal) TYPES
+// ============================================
+
+export type OLTPonPortStatus = "available" | "active" | "reserved" | "faulty";
+
+export interface OLT {
+  id?: number;
+  projectId: number;
+  name: string; // e.g., "OLT-001"
+  model?: string; // e.g., "Huawei MA5800"
+  manufacturer?: string;
+  totalPonPorts: number; // e.g., 16, 32, 64
+  gpsLat?: number;
+  gpsLng?: number;
+  address?: string;
+  notes?: string;
+  createdAt: Date;
+}
+
+export interface OLTPonPort {
+  id?: number;
+  oltId: number;
+  portNumber: number; // 1, 2, 3...
+  label?: string; // e.g., "PON-01"
+  status: OLTPonPortStatus;
+  connectedCableId?: number; // Feeder cable
+  maxSplitRatio: number; // e.g., 64, 128
+  notes?: string;
+}
+
+export type EnclosureType =
+  | "splice-closure"
+  | "handhole"
+  | "pedestal"
+  | "building"
+  | "pole"
+  | "cabinet"
+  | "lcp"  // Local Convergence Point (aggregation)
+  | "nap"  // Network Access Point (customer drop)
+  | "fdt"  // Fiber Distribution Terminal (alt for LCP)
+  | "fat"; // Fiber Access Terminal (alt for NAP)
+
+export type EnclosureParentType = "olt" | "lcp";
+
 export interface Enclosure {
   id?: number;
   projectId: number;
   name: string;
-  type: "splice-closure" | "handhole" | "pedestal" | "building" | "pole" | "cabinet";
+  type: EnclosureType;
+
+  // Parent hierarchy fields
+  parentType?: EnclosureParentType; // "olt" for LCP, "lcp" for NAP
+  parentId?: number; // OLT id for LCP, Enclosure(LCP) id for NAP
+  oltPonPortId?: number; // For LCPs: which PON port feeds this LCP
+
   gpsLat?: number;
   gpsLng?: number;
   address?: string;
@@ -32,6 +83,50 @@ export interface Tray {
   number: number;
   capacity: number; // Max splices per tray (typically 12, 24)
   notes?: string;
+}
+
+// ============================================
+// SPLITTER & PORT TYPES (LCP/NAP)
+// ============================================
+
+export type SplitterType = "1:2" | "1:4" | "1:8" | "1:16" | "1:32";
+
+export interface Splitter {
+  id?: number;
+  enclosureId: number;
+  name: string; // e.g., "SPL-01"
+  type: SplitterType;
+  inputCableId?: number; // Feeder cable
+  inputFiber?: number; // Which fiber from feeder
+  notes?: string;
+  createdAt: Date;
+}
+
+export type PortType = "input" | "output" | "bidirectional";
+export type PortStatus = "available" | "connected" | "reserved" | "faulty";
+export type ConnectorType = "LC" | "SC" | "FC" | "ST" | "MPO" | "MTP";
+
+export interface Port {
+  id?: number;
+  enclosureId: number;
+  splitterId?: number; // If part of a splitter
+  portNumber: number; // 1, 2, 3... (position)
+  label?: string; // Custom label like "P1", "C-101"
+  type: PortType;
+  status: PortStatus;
+  connectorType: ConnectorType;
+
+  // Connection info (if connected)
+  connectedCableId?: number;
+  connectedFiber?: number;
+
+  // Customer info (for NAP ports)
+  customerName?: string;
+  customerAddress?: string;
+  serviceId?: string; // Account/Service ID
+
+  notes?: string;
+  createdAt: Date;
 }
 
 // ============================================
@@ -170,7 +265,7 @@ export interface InventoryUsage {
 export type FiberType = "singlemode" | "multimode";
 export type Wavelength = 850 | 1300 | 1310 | 1550;
 
-export type ConnectorType = "LC" | "SC" | "FC" | "ST" | "MPO" | "MTP";
+// ConnectorType is defined in SPLITTER & PORT TYPES section above
 
 export interface LossBudgetInput {
   name: string;

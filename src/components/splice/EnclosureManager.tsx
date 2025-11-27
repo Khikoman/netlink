@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import dynamic from "next/dynamic";
 import {
   db,
   createProject,
@@ -12,6 +13,17 @@ import {
   deleteTray,
 } from "@/lib/db";
 import type { Project, Enclosure, Tray, Splice } from "@/types";
+import { MapPin } from "lucide-react";
+
+// Dynamically import LocationPicker to avoid SSR issues with Leaflet
+const LocationPicker = dynamic(() => import("@/components/map/LocationPicker"), {
+  ssr: false,
+  loading: () => (
+    <div className="h-32 bg-gray-100 rounded-lg animate-pulse flex items-center justify-center text-gray-400">
+      Loading map...
+    </div>
+  ),
+});
 
 const ENCLOSURE_TYPES = [
   { value: "splice-closure", label: "Splice Closure" },
@@ -20,6 +32,10 @@ const ENCLOSURE_TYPES = [
   { value: "building", label: "Building Entry" },
   { value: "pole", label: "Pole Mount" },
   { value: "cabinet", label: "Cabinet" },
+  { value: "lcp", label: "LCP (Aggregation)" },
+  { value: "nap", label: "NAP (Customer Drop)" },
+  { value: "fdt", label: "FDT (Fiber Distribution)" },
+  { value: "fat", label: "FAT (Fiber Access)" },
 ] as const;
 
 export default function EnclosureManager() {
@@ -36,6 +52,8 @@ export default function EnclosureManager() {
   const [enclosureName, setEnclosureName] = useState("");
   const [enclosureType, setEnclosureType] = useState<Enclosure["type"]>("splice-closure");
   const [enclosureAddress, setEnclosureAddress] = useState("");
+  const [enclosureLat, setEnclosureLat] = useState<number | undefined>(undefined);
+  const [enclosureLng, setEnclosureLng] = useState<number | undefined>(undefined);
   const [trayNumber, setTrayNumber] = useState(1);
   const [trayCapacity, setTrayCapacity] = useState(12);
 
@@ -85,10 +103,11 @@ export default function EnclosureManager() {
       name: enclosureName,
       type: enclosureType,
       address: enclosureAddress,
+      gpsLat: enclosureLat,
+      gpsLng: enclosureLng,
     });
     setSelectedEnclosureId(id);
-    setEnclosureName("");
-    setEnclosureAddress("");
+    resetEnclosureForm();
     setShowEnclosureForm(false);
   };
 
@@ -98,11 +117,19 @@ export default function EnclosureManager() {
       name: enclosureName,
       type: enclosureType,
       address: enclosureAddress,
+      gpsLat: enclosureLat,
+      gpsLng: enclosureLng,
     });
     setEditingEnclosure(null);
+    resetEnclosureForm();
+    setShowEnclosureForm(false);
+  };
+
+  const resetEnclosureForm = () => {
     setEnclosureName("");
     setEnclosureAddress("");
-    setShowEnclosureForm(false);
+    setEnclosureLat(undefined);
+    setEnclosureLng(undefined);
   };
 
   const handleDeleteEnclosure = async (id: number) => {
@@ -136,6 +163,8 @@ export default function EnclosureManager() {
     setEnclosureName(enc.name);
     setEnclosureType(enc.type);
     setEnclosureAddress(enc.address || "");
+    setEnclosureLat(enc.gpsLat);
+    setEnclosureLng(enc.gpsLng);
     setShowEnclosureForm(true);
   };
 
@@ -238,8 +267,7 @@ export default function EnclosureManager() {
             <button
               onClick={() => {
                 setEditingEnclosure(null);
-                setEnclosureName("");
-                setEnclosureAddress("");
+                resetEnclosureForm();
                 setShowEnclosureForm(true);
               }}
               className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700"
@@ -270,6 +298,12 @@ export default function EnclosureManager() {
                       </div>
                       {enc.address && (
                         <div className="text-xs text-gray-400 mt-1">{enc.address}</div>
+                      )}
+                      {enc.gpsLat && enc.gpsLng && (
+                        <div className="flex items-center gap-1 text-xs text-green-600 mt-1">
+                          <MapPin className="w-3 h-3" />
+                          GPS: {enc.gpsLat.toFixed(4)}, {enc.gpsLng.toFixed(4)}
+                        </div>
                       )}
                     </button>
                     <div className="flex gap-2">
@@ -313,7 +347,7 @@ export default function EnclosureManager() {
           {/* Enclosure Form Modal */}
           {showEnclosureForm && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-2xl shadow-xl p-6 max-w-md w-full">
+              <div className="bg-white rounded-2xl shadow-xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
                 <h3 className="text-lg font-semibold text-gray-800 mb-4">
                   {editingEnclosure ? "Edit Enclosure" : "New Enclosure"}
                 </h3>
@@ -325,7 +359,7 @@ export default function EnclosureManager() {
                       value={enclosureName}
                       onChange={(e) => setEnclosureName(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-800"
-                      placeholder="e.g., Splice Closure #1"
+                      placeholder="e.g., HH-001 or SC-001"
                     />
                   </div>
                   <div>
@@ -354,12 +388,30 @@ export default function EnclosureManager() {
                       placeholder="e.g., 123 Main St, Near Pole #45"
                     />
                   </div>
+
+                  {/* GPS Location Section */}
+                  <div className="border-t pt-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-green-600" />
+                      GPS Coordinates
+                    </label>
+                    <LocationPicker
+                      latitude={enclosureLat}
+                      longitude={enclosureLng}
+                      onLocationChange={(lat, lng) => {
+                        setEnclosureLat(lat);
+                        setEnclosureLng(lng);
+                      }}
+                      showMiniMap={true}
+                    />
+                  </div>
                 </div>
                 <div className="flex gap-3 mt-6">
                   <button
                     onClick={() => {
                       setShowEnclosureForm(false);
                       setEditingEnclosure(null);
+                      resetEnclosureForm();
                     }}
                     className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
                   >
