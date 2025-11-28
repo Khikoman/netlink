@@ -610,19 +610,65 @@ export async function getOrphanedNAPs(projectId: number) {
     .toArray();
 }
 
-export interface HierarchyStats {
+// ============================================
+// CLOSURE HIERARCHY QUERIES (OLT → Closure → LCP → NAP)
+// ============================================
+
+/**
+ * Get closures directly under an OLT (parentType: "olt", type: "splice-closure")
+ */
+export async function getClosuresByOLT(oltId: number) {
+  return db.enclosures
+    .where("parentId")
+    .equals(oltId)
+    .filter((e) => e.parentType === "olt" && e.type === "splice-closure")
+    .toArray();
+}
+
+/**
+ * Get LCPs under a closure (parentType: "closure")
+ */
+export async function getLCPsByClosure(closureId: number) {
+  return db.enclosures
+    .where("parentId")
+    .equals(closureId)
+    .filter((e) => e.parentType === "closure" && (e.type === "lcp" || e.type === "fdt"))
+    .toArray();
+}
+
+/**
+ * Get closures without a parent OLT (orphaned)
+ */
+export async function getOrphanedClosures(projectId: number) {
+  return db.enclosures
+    .where("projectId")
+    .equals(projectId)
+    .filter((e) => e.type === "splice-closure" && !e.parentId)
+    .toArray();
+}
+
+export interface ClosureHierarchyStats {
   lcpCount: number;
   napCount: number;
   customerCount: number;
+  splitterCount: number;
+  trayCount: number;
   utilization: number;
 }
 
-export async function getOLTHierarchyStats(oltId: number): Promise<HierarchyStats> {
-  const lcps = await getLCPsByOLT(oltId);
+/**
+ * Get hierarchy stats for a closure (LCPs, NAPs, customers under it)
+ */
+export async function getClosureHierarchyStats(closureId: number): Promise<ClosureHierarchyStats> {
+  const lcps = await getLCPsByClosure(closureId);
   let totalNAPs = 0;
   let totalCustomers = 0;
   let totalPorts = 0;
   let connectedPorts = 0;
+
+  // Count splitters and trays in the closure itself
+  const splitters = await db.splitters.where("enclosureId").equals(closureId).toArray();
+  const trays = await db.trays.where("enclosureId").equals(closureId).toArray();
 
   for (const lcp of lcps) {
     if (!lcp.id) continue;
@@ -640,6 +686,85 @@ export async function getOLTHierarchyStats(oltId: number): Promise<HierarchyStat
 
   return {
     lcpCount: lcps.length,
+    napCount: totalNAPs,
+    customerCount: totalCustomers,
+    splitterCount: splitters.length,
+    trayCount: trays.length,
+    utilization: totalPorts > 0 ? Math.round((connectedPorts / totalPorts) * 100) : 0,
+  };
+}
+
+/**
+ * Get closure contents (trays and splitters)
+ */
+export async function getClosureContents(closureId: number) {
+  const trays = await db.trays.where("enclosureId").equals(closureId).toArray();
+  const splitters = await db.splitters.where("enclosureId").equals(closureId).toArray();
+  return { trays: trays.sort((a, b) => a.number - b.number), splitters };
+}
+
+export interface HierarchyStats {
+  closureCount?: number;
+  lcpCount: number;
+  napCount: number;
+  customerCount: number;
+  utilization: number;
+}
+
+/**
+ * Get OLT hierarchy stats - supports both old (OLT→LCP) and new (OLT→Closure→LCP) hierarchy
+ */
+export async function getOLTHierarchyStats(oltId: number): Promise<HierarchyStats> {
+  // Get closures under this OLT (new hierarchy)
+  const closures = await getClosuresByOLT(oltId);
+  // Get legacy LCPs directly under OLT (old hierarchy)
+  const legacyLCPs = await getLCPsByOLT(oltId);
+
+  let totalLCPs = legacyLCPs.length;
+  let totalNAPs = 0;
+  let totalCustomers = 0;
+  let totalPorts = 0;
+  let connectedPorts = 0;
+
+  // Process new hierarchy: OLT → Closure → LCP → NAP
+  for (const closure of closures) {
+    if (!closure.id) continue;
+    const lcps = await getLCPsByClosure(closure.id);
+    totalLCPs += lcps.length;
+
+    for (const lcp of lcps) {
+      if (!lcp.id) continue;
+      const naps = await getNAPsByLCP(lcp.id);
+      totalNAPs += naps.length;
+
+      for (const nap of naps) {
+        if (!nap.id) continue;
+        const ports = await db.ports.where("enclosureId").equals(nap.id).toArray();
+        totalPorts += ports.length;
+        connectedPorts += ports.filter((p) => p.status === "connected").length;
+        totalCustomers += ports.filter((p) => p.status === "connected").length;
+      }
+    }
+  }
+
+  // Process legacy hierarchy: OLT → LCP → NAP (backwards compatibility)
+  for (const lcp of legacyLCPs) {
+    if (!lcp.id) continue;
+    const naps = await getNAPsByLCP(lcp.id);
+    totalNAPs += naps.length;
+
+    for (const nap of naps) {
+      if (!nap.id) continue;
+      const ports = await db.ports.where("enclosureId").equals(nap.id).toArray();
+      totalPorts += ports.length;
+      connectedPorts += ports.filter((p) => p.status === "connected").length;
+      totalCustomers += ports.filter((p) => p.status === "connected").length;
+    }
+  }
+
+  return {
+    closureCount: closures.length,
+    lcpCount: totalLCPs,
     napCount: totalNAPs,
     customerCount: totalCustomers,
     utilization: totalPorts > 0 ? Math.round((connectedPorts / totalPorts) * 100) : 0,

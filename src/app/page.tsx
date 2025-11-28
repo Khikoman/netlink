@@ -5,17 +5,13 @@ import dynamic from "next/dynamic";
 import {
   Home,
   Wrench,
-  Link2,
   BarChart3,
   Package,
   Map,
   Menu,
   X,
   Zap,
-  Settings,
-  GitBranch,
   Network,
-  Server,
 } from "lucide-react";
 import { CardSkeleton } from "@/components/ui";
 
@@ -30,9 +26,6 @@ import Dashboard from "@/components/Dashboard";
 
 // Dynamically import heavy components to reduce initial bundle
 const SpliceMatrix = dynamic(() => import("@/components/splice/SpliceMatrix"), {
-  loading: () => <CardSkeleton />,
-});
-const EnclosureManager = dynamic(() => import("@/components/splice/EnclosureManager"), {
   loading: () => <CardSkeleton />,
 });
 const LossBudgetCalculator = dynamic(() => import("@/components/analysis/LossBudgetCalculator"), {
@@ -51,33 +44,24 @@ const NetworkMap = dynamic(() => import("@/components/map/NetworkMap"), {
 const ProjectWizard = dynamic(() => import("@/components/ProjectWizard"), {
   loading: () => <CardSkeleton />,
 });
-const LCPManager = dynamic(() => import("@/components/lcp/LCPManager"), {
-  loading: () => <CardSkeleton />,
-});
-const NAPManager = dynamic(() => import("@/components/nap/NAPManager"), {
-  loading: () => <CardSkeleton />,
-});
-const HierarchyBrowser = dynamic(() => import("@/components/hierarchy/HierarchyBrowser"), {
+const UnifiedHierarchyBrowser = dynamic(() => import("@/components/hierarchy/UnifiedHierarchyBrowser"), {
   loading: () => <CardSkeleton />,
 });
 
-// Navigation structure
-type TabGroup = "home" | "tools" | "splice" | "distribution" | "hierarchy" | "analysis" | "inventory" | "map";
+// Navigation structure - Simplified: merged splice/distribution/hierarchy into "network"
+type TabGroup = "home" | "tools" | "network" | "analysis" | "inventory" | "map";
 type Tab =
   | "dashboard"
   | "lookup"
   | "reverse"
   | "overview"
   | "reference"
-  | "matrix"
-  | "enclosures"
-  | "lcp"
-  | "nap"
-  | "hierarchyBrowser"
+  | "hierarchy"
+  | "spliceMatrix"
   | "lossBudget"
   | "otdr"
   | "stock"
-  | "network";
+  | "networkMap";
 
 interface TabConfig {
   id: Tab;
@@ -93,35 +77,28 @@ const tabs: TabConfig[] = [
   { id: "reverse", label: "Color to #", group: "tools" },
   { id: "overview", label: "Cable View", group: "tools" },
   { id: "reference", label: "Reference", group: "tools" },
-  // Splice group
-  { id: "matrix", label: "Splice Matrix", group: "splice" },
-  { id: "enclosures", label: "Enclosures", group: "splice" },
-  // Distribution group (LCP/NAP) - standalone management
-  { id: "lcp", label: "LCP", group: "distribution" },
-  { id: "nap", label: "NAP", group: "distribution" },
-  // Hierarchy group - OLT → LCP → NAP drill-down
-  { id: "hierarchyBrowser", label: "Network Hierarchy", group: "hierarchy" },
+  // Network group (unified: hierarchy + splice matrix)
+  { id: "hierarchy", label: "Hierarchy", group: "network" },
+  { id: "spliceMatrix", label: "Splice Matrix", group: "network" },
   // Analysis group
   { id: "lossBudget", label: "Loss Budget", group: "analysis" },
   { id: "otdr", label: "OTDR Viewer", group: "analysis" },
   // Inventory group
   { id: "stock", label: "Inventory", group: "inventory" },
   // Map group
-  { id: "network", label: "Network Map", group: "map" },
+  { id: "networkMap", label: "Network Map", group: "map" },
 ];
 
 const groupConfig: Record<TabGroup, { label: string; icon: React.ReactNode }> = {
   home: { label: "Home", icon: <Home className="w-4 h-4" /> },
   tools: { label: "Tools", icon: <Wrench className="w-4 h-4" /> },
-  splice: { label: "Splice", icon: <Link2 className="w-4 h-4" /> },
-  distribution: { label: "LCP/NAP", icon: <GitBranch className="w-4 h-4" /> },
-  hierarchy: { label: "Hierarchy", icon: <Network className="w-4 h-4" /> },
+  network: { label: "Network", icon: <Network className="w-4 h-4" /> },
   analysis: { label: "Analysis", icon: <BarChart3 className="w-4 h-4" /> },
   inventory: { label: "Inventory", icon: <Package className="w-4 h-4" /> },
   map: { label: "Map", icon: <Map className="w-4 h-4" /> },
 };
 
-const groups: TabGroup[] = ["home", "tools", "splice", "distribution", "hierarchy", "analysis", "inventory", "map"];
+const groups: TabGroup[] = ["home", "tools", "network", "analysis", "inventory", "map"];
 
 export default function HomePage() {
   // Start with Dashboard as default
@@ -159,13 +136,14 @@ export default function HomePage() {
     // Navigate based on what user chose
     switch (nextAction) {
       case "splice":
-        handleNavigate("matrix");
+        handleNavigate("spliceMatrix");
         break;
       case "enclosures":
-        handleNavigate("enclosures");
+      case "hierarchy":
+        handleNavigate("hierarchy");
         break;
       case "map":
-        handleNavigate("network");
+        handleNavigate("networkMap");
         break;
       default:
         handleNavigate("dashboard");
@@ -351,34 +329,11 @@ export default function HomePage() {
         {activeTab === "overview" && <CableOverview />}
         {activeTab === "reference" && <ColorReference />}
 
-        {/* Splice */}
-        {activeTab === "matrix" && <SpliceMatrix />}
-        {activeTab === "enclosures" && <EnclosureManager />}
-
-        {/* Distribution (LCP/NAP) */}
-        {activeTab === "lcp" && selectedProjectId && <LCPManager projectId={selectedProjectId} />}
-        {activeTab === "nap" && selectedProjectId && <NAPManager projectId={selectedProjectId} />}
-        {(activeTab === "lcp" || activeTab === "nap") && !selectedProjectId && (
-          <div className="text-center py-12 bg-white rounded-2xl shadow-lg">
-            <GitBranch className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-            <h3 className="text-lg font-medium text-gray-700 mb-2">Select a Project First</h3>
-            <p className="text-gray-500 mb-4">
-              Please select a project from the Dashboard to manage LCP/NAP
-            </p>
-            <button
-              onClick={() => handleNavigate("dashboard")}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-            >
-              Go to Dashboard
-            </button>
-          </div>
+        {/* Network - Unified Hierarchy (OLT → Closure → LCP → NAP) */}
+        {activeTab === "hierarchy" && selectedProjectId && (
+          <UnifiedHierarchyBrowser projectId={selectedProjectId} />
         )}
-
-        {/* Hierarchy Browser - OLT → LCP → NAP */}
-        {activeTab === "hierarchyBrowser" && selectedProjectId && (
-          <HierarchyBrowser projectId={selectedProjectId} />
-        )}
-        {activeTab === "hierarchyBrowser" && !selectedProjectId && (
+        {activeTab === "hierarchy" && !selectedProjectId && (
           <div className="text-center py-12 bg-white rounded-2xl shadow-lg">
             <Network className="w-12 h-12 mx-auto text-gray-400 mb-4" />
             <h3 className="text-lg font-medium text-gray-700 mb-2">Select a Project First</h3>
@@ -394,6 +349,9 @@ export default function HomePage() {
           </div>
         )}
 
+        {/* Network - Splice Matrix */}
+        {activeTab === "spliceMatrix" && <SpliceMatrix />}
+
         {/* Analysis */}
         {activeTab === "lossBudget" && <LossBudgetCalculator />}
         {activeTab === "otdr" && <OtdrViewer />}
@@ -402,7 +360,7 @@ export default function HomePage() {
         {activeTab === "stock" && <InventoryList />}
 
         {/* Map */}
-        {activeTab === "network" && <NetworkMap />}
+        {activeTab === "networkMap" && <NetworkMap />}
       </main>
 
       {/* Project Wizard Modal */}

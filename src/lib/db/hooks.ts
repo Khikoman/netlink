@@ -1,5 +1,14 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { db, getOLTHierarchyStats, getLCPHierarchyStats, getNAPStats } from "./index";
+import {
+  db,
+  getOLTHierarchyStats,
+  getLCPHierarchyStats,
+  getNAPStats,
+  getClosuresByOLT,
+  getLCPsByClosure,
+  getClosureHierarchyStats,
+  getClosureContents,
+} from "./index";
 import type {
   Project,
   Enclosure,
@@ -324,6 +333,79 @@ export function useNAPPortStats(napId: number | undefined) {
       return getNAPStats(napId);
     },
     [napId]
+  );
+}
+
+// ============================================
+// CLOSURE HIERARCHY HOOKS (OLT → Closure → LCP → NAP)
+// ============================================
+
+/**
+ * Get closures under an OLT
+ */
+export function useClosuresByOLT(oltId: number | undefined) {
+  return useLiveQuery(
+    async () => {
+      if (!oltId) return [];
+      return getClosuresByOLT(oltId);
+    },
+    [oltId]
+  );
+}
+
+/**
+ * Get LCPs under a closure
+ */
+export function useLCPsByClosure(closureId: number | undefined) {
+  return useLiveQuery(
+    async () => {
+      if (!closureId) return [];
+      return getLCPsByClosure(closureId);
+    },
+    [closureId]
+  );
+}
+
+/**
+ * Get hierarchy stats for a closure
+ */
+export function useClosureHierarchyStats(closureId: number | undefined) {
+  return useLiveQuery(
+    async () => {
+      if (!closureId) return null;
+      return getClosureHierarchyStats(closureId);
+    },
+    [closureId]
+  );
+}
+
+/**
+ * Get closure contents (trays and splitters)
+ */
+export function useClosureContents(closureId: number | undefined) {
+  return useLiveQuery(
+    async () => {
+      if (!closureId) return { trays: [], splitters: [] };
+      return getClosureContents(closureId);
+    },
+    [closureId]
+  );
+}
+
+/**
+ * Get orphaned closures (no parent OLT)
+ */
+export function useOrphanedClosures(projectId: number | undefined) {
+  return useLiveQuery(
+    async () => {
+      if (!projectId) return [];
+      return db.enclosures
+        .where("projectId")
+        .equals(projectId)
+        .filter((e) => e.type === "splice-closure" && !e.parentId)
+        .toArray();
+    },
+    [projectId]
   );
 }
 

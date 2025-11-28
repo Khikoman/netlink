@@ -57,7 +57,7 @@ export type EnclosureType =
   | "fdt"  // Fiber Distribution Terminal (alt for LCP)
   | "fat"; // Fiber Access Terminal (alt for NAP)
 
-export type EnclosureParentType = "olt" | "lcp";
+export type EnclosureParentType = "olt" | "closure" | "lcp";
 
 export interface Enclosure {
   id?: number;
@@ -66,8 +66,9 @@ export interface Enclosure {
   type: EnclosureType;
 
   // Parent hierarchy fields
-  parentType?: EnclosureParentType; // "olt" for LCP, "lcp" for NAP
-  parentId?: number; // OLT id for LCP, Enclosure(LCP) id for NAP
+  // Hierarchy: OLT -> Closure (parentType: "olt") -> LCP (parentType: "closure") -> NAP (parentType: "lcp")
+  parentType?: EnclosureParentType;
+  parentId?: number; // OLT id for Closure, Closure id for LCP, LCP id for NAP
   oltPonPortId?: number; // For LCPs: which PON port feeds this LCP
 
   gpsLat?: number;

@@ -122,12 +122,54 @@ export default function GpsMap({ projectId, onEnclosureClick }: GpsMapProps) {
       from: [number, number];
       to: [number, number];
       label?: string;
-      type: "route" | "hierarchy-olt-lcp" | "hierarchy-lcp-nap";
+      type: "route" | "hierarchy-olt-closure" | "hierarchy-closure-lcp" | "hierarchy-olt-lcp" | "hierarchy-lcp-nap";
     }[] = [];
 
-    // 1. Add hierarchy connections (OLT → LCP → NAP)
+    // 1. Add hierarchy connections (OLT → Closure → LCP → NAP)
     if (enclosures && olts && allEnclosures) {
-      // OLT → LCP connections
+      // OLT → Closure connections (new hierarchy)
+      enclosures.forEach((enc) => {
+        if (
+          enc.type === "splice-closure" &&
+          enc.parentType === "olt" &&
+          enc.parentId &&
+          enc.gpsLat &&
+          enc.gpsLng
+        ) {
+          const parentOLT = olts.find((o) => o.id === enc.parentId);
+          if (parentOLT?.gpsLat && parentOLT?.gpsLng) {
+            lines.push({
+              from: [parentOLT.gpsLat, parentOLT.gpsLng],
+              to: [enc.gpsLat, enc.gpsLng],
+              label: "Feeder",
+              type: "hierarchy-olt-closure",
+            });
+          }
+        }
+      });
+
+      // Closure → LCP connections (new hierarchy)
+      enclosures.forEach((enc) => {
+        if (
+          (enc.type === "lcp" || enc.type === "fdt") &&
+          enc.parentType === "closure" &&
+          enc.parentId &&
+          enc.gpsLat &&
+          enc.gpsLng
+        ) {
+          const parentClosure = enclosures.find((e) => e.id === enc.parentId);
+          if (parentClosure?.gpsLat && parentClosure?.gpsLng) {
+            lines.push({
+              from: [parentClosure.gpsLat, parentClosure.gpsLng],
+              to: [enc.gpsLat, enc.gpsLng],
+              label: "Distribution",
+              type: "hierarchy-closure-lcp",
+            });
+          }
+        }
+      });
+
+      // OLT → LCP connections (legacy direct connection)
       enclosures.forEach((enc) => {
         if (
           (enc.type === "lcp" || enc.type === "fdt") &&
@@ -141,7 +183,7 @@ export default function GpsMap({ projectId, onEnclosureClick }: GpsMapProps) {
             lines.push({
               from: [parentOLT.gpsLat, parentOLT.gpsLng],
               to: [enc.gpsLat, enc.gpsLng],
-              label: "Feeder",
+              label: "Legacy Feeder",
               type: "hierarchy-olt-lcp",
             });
           }
@@ -310,11 +352,23 @@ export default function GpsMap({ projectId, onEnclosureClick }: GpsMapProps) {
         {routeLines.map((line, idx) => {
           // Different styles for different connection types
           const pathOptions = {
-            "hierarchy-olt-lcp": {
-              color: "#0d9488", // teal for OLT→LCP (feeder)
-              weight: 4,
+            "hierarchy-olt-closure": {
+              color: "#0d9488", // teal for OLT→Closure (feeder)
+              weight: 5,
               opacity: 0.9,
               dashArray: undefined,
+            },
+            "hierarchy-closure-lcp": {
+              color: "#8b5cf6", // purple for Closure→LCP (distribution)
+              weight: 4,
+              opacity: 0.85,
+              dashArray: undefined,
+            },
+            "hierarchy-olt-lcp": {
+              color: "#0d9488", // teal for legacy OLT→LCP (feeder)
+              weight: 4,
+              opacity: 0.7,
+              dashArray: "12, 6",
             },
             "hierarchy-lcp-nap": {
               color: "#f97316", // orange for LCP→NAP (drop)
@@ -392,6 +446,11 @@ export default function GpsMap({ projectId, onEnclosureClick }: GpsMapProps) {
                     ↑ Parent: {olts?.find((o) => o.id === enc.parentId)?.name || "OLT"}
                   </p>
                 )}
+                {enc.parentType === "closure" && enc.parentId && (
+                  <p className="text-xs text-purple-600 mt-1">
+                    ↑ Parent: {enclosures.find((e) => e.id === enc.parentId)?.name || "Closure"}
+                  </p>
+                )}
                 {enc.parentType === "lcp" && enc.parentId && (
                   <p className="text-xs text-orange-600 mt-1">
                     ↑ Parent: {enclosures.find((e) => e.id === enc.parentId)?.name || "LCP"}
@@ -443,10 +502,22 @@ export default function GpsMap({ projectId, onEnclosureClick }: GpsMapProps) {
             {routeLines.length > 0 && (
               <div className="mt-2 pt-2 border-t space-y-1">
                 <div className="text-xs font-medium text-gray-500 mb-1">Connections</div>
-                {routeLines.some((l) => l.type === "hierarchy-olt-lcp") && (
+                {routeLines.some((l) => l.type === "hierarchy-olt-closure") && (
                   <div className="flex items-center gap-2">
                     <div className="w-4 border-t-2 border-teal-600" />
-                    <span className="text-gray-600 text-xs">OLT → LCP (Feeder)</span>
+                    <span className="text-gray-600 text-xs">OLT → Closure</span>
+                  </div>
+                )}
+                {routeLines.some((l) => l.type === "hierarchy-closure-lcp") && (
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 border-t-2 border-purple-500" />
+                    <span className="text-gray-600 text-xs">Closure → LCP</span>
+                  </div>
+                )}
+                {routeLines.some((l) => l.type === "hierarchy-olt-lcp") && (
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 border-t-2 border-dashed border-teal-600" />
+                    <span className="text-gray-600 text-xs">OLT → LCP (Legacy)</span>
                   </div>
                 )}
                 {routeLines.some((l) => l.type === "hierarchy-lcp-nap") && (
