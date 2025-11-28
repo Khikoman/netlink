@@ -33,6 +33,7 @@ import {
   Grid3X3,
 } from "lucide-react";
 import { PortStatusSummary } from "@/components/port/PortGrid";
+import PortConnectionModal from "@/components/port/PortConnectionModal";
 
 interface UnifiedHierarchyBrowserProps {
   projectId: number;
@@ -58,6 +59,10 @@ export default function UnifiedHierarchyBrowser({ projectId }: UnifiedHierarchyB
   const [showClosureForm, setShowClosureForm] = useState(false);
   const [showLCPForm, setShowLCPForm] = useState(false);
   const [showNAPForm, setShowNAPForm] = useState(false);
+
+  // Port editor states
+  const [selectedPort, setSelectedPort] = useState<Port | null>(null);
+  const [selectedNAPForPort, setSelectedNAPForPort] = useState<Enclosure | null>(null);
 
   // Data
   const olts = useOLTs(projectId);
@@ -217,6 +222,10 @@ export default function UnifiedHierarchyBrowser({ projectId }: UnifiedHierarchyB
         <NAPPortsDetail
           nap={selectedNAP}
           ports={napPorts.sort((a, b) => a.portNumber - b.portNumber)}
+          onPortClick={(port) => {
+            setSelectedPort(port);
+            setSelectedNAPForPort(selectedNAP);
+          }}
         />
       )}
 
@@ -283,6 +292,23 @@ export default function UnifiedHierarchyBrowser({ projectId }: UnifiedHierarchyB
           onCreated={(id) => {
             setShowNAPForm(false);
             selectNAP(id);
+          }}
+        />
+      )}
+
+      {/* Port Connection Modal - Edit NAP port details */}
+      {selectedPort && selectedNAPForPort && (
+        <PortConnectionModal
+          port={selectedPort}
+          projectId={projectId}
+          isNAP={true}
+          onClose={() => {
+            setSelectedPort(null);
+            setSelectedNAPForPort(null);
+          }}
+          onSave={() => {
+            setSelectedPort(null);
+            setSelectedNAPForPort(null);
           }}
         />
       )}
@@ -835,7 +861,15 @@ function ClosureContentsDetail({
 // NAP Ports Detail Component
 // ============================================
 
-function NAPPortsDetail({ nap, ports }: { nap: Enclosure; ports: Port[] }) {
+function NAPPortsDetail({
+  nap,
+  ports,
+  onPortClick,
+}: {
+  nap: Enclosure;
+  ports: Port[];
+  onPortClick?: (port: Port) => void;
+}) {
   return (
     <div className="bg-white rounded-lg shadow-sm border p-4">
       <div className="flex items-center justify-between mb-4">
@@ -846,6 +880,10 @@ function NAPPortsDetail({ nap, ports }: { nap: Enclosure; ports: Port[] }) {
         <PortStatusSummary ports={ports} />
       </div>
 
+      <p className="text-xs text-gray-500 mb-3">
+        Click a port to edit customer details
+      </p>
+
       {ports.length === 0 ? (
         <div className="text-center py-8 text-gray-500">
           No ports configured for this NAP.
@@ -853,9 +891,10 @@ function NAPPortsDetail({ nap, ports }: { nap: Enclosure; ports: Port[] }) {
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
           {ports.map((port) => (
-            <div
+            <button
               key={port.id}
-              className={`p-2 rounded-lg border text-center ${
+              onClick={() => onPortClick?.(port)}
+              className={`p-2 rounded-lg border text-center transition-all cursor-pointer hover:ring-2 hover:ring-cyan-400 hover:shadow-md ${
                 port.status === "connected"
                   ? "bg-green-50 border-green-200"
                   : port.status === "reserved"
@@ -883,7 +922,7 @@ function NAPPortsDetail({ nap, ports }: { nap: Enclosure; ports: Port[] }) {
                   {port.customerName}
                 </div>
               )}
-            </div>
+            </button>
           ))}
         </div>
       )}
