@@ -96,7 +96,7 @@ export default function Dashboard({ onNavigate, onSelectProject }: DashboardProp
     if (onSelectProject && project.id) {
       onSelectProject(project.id);
     }
-    onNavigate("matrix");
+    onNavigate("hierarchy");
   };
 
   return (
