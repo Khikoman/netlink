@@ -16,6 +16,7 @@ import type {
   Port,
   OLT,
   OLTPonPort,
+  CustomerAttachment,
 } from "@/types";
 
 // NetLink Database using Dexie.js (IndexedDB wrapper)
@@ -37,6 +38,7 @@ class NetLinkDB extends Dexie {
   ports!: EntityTable<Port, "id">;
   olts!: EntityTable<OLT, "id">;
   oltPonPorts!: EntityTable<OLTPonPort, "id">;
+  customerAttachments!: EntityTable<CustomerAttachment, "id">;
 
   constructor() {
     super("NetLinkDB");
@@ -94,6 +96,27 @@ class NetLinkDB extends Dexie {
       ports: "++id, enclosureId, splitterId, portNumber, status",
       olts: "++id, projectId, name",
       oltPonPorts: "++id, oltId, portNumber, status",
+    });
+
+    // Version 4: Add customer attachments for NAP ports (photos, documents, signatures)
+    this.version(4).stores({
+      projects: "++id, name, status, createdAt",
+      enclosures: "++id, projectId, name, type, parentType, parentId",
+      trays: "++id, enclosureId, number",
+      cables: "++id, projectId, name, fiberCount",
+      splices: "++id, trayId, cableAId, cableBId, fiberA, fiberB, status, timestamp",
+      otdrTraces: "++id, spliceId, wavelength, uploadedAt",
+      inventory: "++id, category, name, partNumber",
+      inventoryUsage: "++id, inventoryId, projectId, date",
+      lossBudgets: "++id, [input.name], createdAt",
+      mapNodes: "++id, projectId, type, enclosureId",
+      mapRoutes: "++id, projectId, fromNodeId, toNodeId, cableId",
+      syncQueue: "++id, table, recordId, synced, timestamp",
+      splitters: "++id, enclosureId, name, type",
+      ports: "++id, enclosureId, splitterId, portNumber, status",
+      olts: "++id, projectId, name",
+      oltPonPorts: "++id, oltId, portNumber, status",
+      customerAttachments: "++id, portId, projectId, attachmentType, uploadedAt",
     });
   }
 }
@@ -496,6 +519,46 @@ export async function getAvailablePorts(enclosureId: number) {
 export async function getPortsByStatus(enclosureId: number, status: Port["status"]) {
   const ports = await db.ports.where("enclosureId").equals(enclosureId).toArray();
   return ports.filter(p => p.status === status).sort((a, b) => a.portNumber - b.portNumber);
+}
+
+// ============================================
+// CUSTOMER ATTACHMENT OPERATIONS
+// ============================================
+
+export async function createAttachment(
+  attachment: Omit<CustomerAttachment, "id" | "uploadedAt">
+): Promise<number> {
+  const id = await db.customerAttachments.add({
+    ...attachment,
+    uploadedAt: new Date(),
+  });
+  return id as number;
+}
+
+export async function getAttachmentsByPort(portId: number) {
+  return db.customerAttachments
+    .where("portId")
+    .equals(portId)
+    .toArray();
+}
+
+export async function getAttachmentsByProject(projectId: number) {
+  return db.customerAttachments
+    .where("projectId")
+    .equals(projectId)
+    .toArray();
+}
+
+export async function getAttachment(id: number) {
+  return db.customerAttachments.get(id);
+}
+
+export async function deleteAttachment(id: number) {
+  return db.customerAttachments.delete(id);
+}
+
+export async function deleteAttachmentsByPort(portId: number) {
+  return db.customerAttachments.where("portId").equals(portId).delete();
 }
 
 // ============================================

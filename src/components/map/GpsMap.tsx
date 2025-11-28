@@ -3,8 +3,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
-import type { Enclosure, MapRoute, OLT } from "@/types";
-import { MapPin, Loader2, AlertCircle, Layers, Network } from "lucide-react";
+import type { Enclosure, MapRoute, OLT, Port } from "@/types";
+import { MapPin, Loader2, AlertCircle, Layers, Users, Navigation, Signal, Phone } from "lucide-react";
 
 // Enclosure type colors
 const ENCLOSURE_COLORS: Record<string, string> = {
@@ -51,6 +51,7 @@ export default function GpsMap({ projectId, onEnclosureClick }: GpsMapProps) {
   } | null>(null);
   const [L, setL] = useState<typeof import("leaflet") | null>(null);
   const [showLegend, setShowLegend] = useState(true);
+  const [showCustomers, setShowCustomers] = useState(true);
 
   // Load enclosures with GPS coordinates
   const enclosures = useLiveQuery(
@@ -92,7 +93,27 @@ export default function GpsMap({ projectId, onEnclosureClick }: GpsMapProps) {
     [projectId]
   );
 
-  // Calculate center and bounds (include OLTs)
+  // Load customer ports with GPS coordinates
+  const customerPorts = useLiveQuery(async () => {
+    // Get all enclosures for this project to filter ports
+    const projectEnclosures = await db.enclosures
+      .where("projectId")
+      .equals(projectId)
+      .toArray();
+    const enclosureIds = projectEnclosures.map((e) => e.id!);
+
+    // Get all ports for these enclosures that have customer GPS
+    const allPorts = await db.ports.toArray();
+    return allPorts.filter(
+      (p) =>
+        enclosureIds.includes(p.enclosureId) &&
+        p.customerGpsLat !== undefined &&
+        p.customerGpsLng !== undefined &&
+        p.customerName
+    );
+  }, [projectId]);
+
+  // Calculate center and bounds (include OLTs and customers)
   const mapCenter = useMemo(() => {
     const allPoints: { lat: number; lng: number }[] = [];
 
@@ -106,6 +127,11 @@ export default function GpsMap({ projectId, onEnclosureClick }: GpsMapProps) {
       allPoints.push({ lat: o.gpsLat!, lng: o.gpsLng! });
     });
 
+    // Add customer points
+    customerPorts?.filter((p) => p.customerGpsLat && p.customerGpsLng).forEach((p) => {
+      allPoints.push({ lat: p.customerGpsLat!, lng: p.customerGpsLng! });
+    });
+
     if (allPoints.length === 0) {
       return { lat: 14.5995, lng: 120.9842 }; // Default to Philippines
     }
@@ -114,7 +140,7 @@ export default function GpsMap({ projectId, onEnclosureClick }: GpsMapProps) {
     const avgLng = allPoints.reduce((sum, p) => sum + p.lng, 0) / allPoints.length;
 
     return { lat: avgLat, lng: avgLng };
-  }, [enclosures, olts]);
+  }, [enclosures, olts, customerPorts]);
 
   // Calculate routes between enclosures (including hierarchy connections)
   const routeLines = useMemo(() => {
@@ -304,6 +330,81 @@ export default function GpsMap({ projectId, onEnclosureClick }: GpsMapProps) {
     });
   };
 
+  // Create customer icon (house style)
+  const createCustomerIcon = (signalLevel?: "good" | "fair" | "poor" | "critical") => {
+    if (!L) return undefined;
+
+    const colors = {
+      good: "#22c55e", // green
+      fair: "#eab308", // yellow
+      poor: "#f97316", // orange
+      critical: "#ef4444", // red
+    };
+    const color = signalLevel ? colors[signalLevel] : "#6b7280"; // gray if no signal data
+
+    return L.divIcon({
+      className: "customer-marker",
+      html: `
+        <div style="
+          position: relative;
+          width: 28px;
+          height: 28px;
+        ">
+          <div style="
+            background-color: ${color};
+            width: 28px;
+            height: 20px;
+            border-radius: 4px 4px 0 0;
+            border: 2px solid white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            position: absolute;
+            bottom: 0;
+          "></div>
+          <div style="
+            width: 0;
+            height: 0;
+            border-left: 16px solid transparent;
+            border-right: 16px solid transparent;
+            border-bottom: 14px solid ${color};
+            position: absolute;
+            top: 0;
+            left: -2px;
+            filter: drop-shadow(0 -1px 1px rgba(0,0,0,0.2));
+          "></div>
+          <div style="
+            background-color: white;
+            width: 8px;
+            height: 10px;
+            position: absolute;
+            bottom: 2px;
+            left: 10px;
+            border-radius: 1px;
+          "></div>
+        </div>
+      `,
+      iconSize: [28, 34],
+      iconAnchor: [14, 34],
+      popupAnchor: [0, -34],
+    });
+  };
+
+  // Get signal level from ONU Rx power
+  const getSignalLevel = (rxPower?: number): "good" | "fair" | "poor" | "critical" | undefined => {
+    if (rxPower === undefined) return undefined;
+    if (rxPower > -25) return "good";
+    if (rxPower > -27) return "fair";
+    if (rxPower > -28) return "poor";
+    return "critical";
+  };
+
+  // Open navigation in external app
+  const openNavigation = (lat: number, lng: number, name?: string) => {
+    const label = encodeURIComponent(name || "Customer Location");
+    // Use Google Maps URL which works on both iOS and Android
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&destination_place_id=${label}`;
+    window.open(url, "_blank");
+  };
+
   if (!MapComponents || !L) {
     return (
       <div className="h-full min-h-[400px] bg-gray-100 rounded-lg flex items-center justify-center">
@@ -471,21 +572,124 @@ export default function GpsMap({ projectId, onEnclosureClick }: GpsMapProps) {
             </Popup>
           </Marker>
         ))}
+
+        {/* Draw customer markers */}
+        {showCustomers && customerPorts?.map((port) => {
+          const signalLevel = getSignalLevel(port.onuRxPower);
+          const signalColors = {
+            good: "text-green-600",
+            fair: "text-yellow-600",
+            poor: "text-orange-600",
+            critical: "text-red-600",
+          };
+
+          return (
+            <Marker
+              key={`customer-${port.id}`}
+              position={[port.customerGpsLat!, port.customerGpsLng!]}
+              icon={createCustomerIcon(signalLevel)}
+            >
+              <Popup>
+                <div className="min-w-[180px]">
+                  <h4 className="font-bold text-gray-800">{port.customerName}</h4>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {port.customerAddress || "No address"}
+                  </p>
+                  {port.serviceId && (
+                    <p className="text-xs text-blue-600 mt-1">
+                      ID: {port.serviceId}
+                    </p>
+                  )}
+
+                  {/* Signal Status */}
+                  {port.onuRxPower !== undefined && (
+                    <div className={`text-xs mt-2 ${signalLevel ? signalColors[signalLevel] : "text-gray-500"}`}>
+                      <Signal className="w-3 h-3 inline mr-1" />
+                      {port.onuRxPower.toFixed(1)} dBm
+                      {signalLevel && (
+                        <span className="ml-1 capitalize">
+                          ({signalLevel === "good" ? "Good" : signalLevel === "fair" ? "Fair" : signalLevel === "poor" ? "Poor" : "Critical"})
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Service Status */}
+                  {port.serviceStatus && (
+                    <div className="mt-1">
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${
+                        port.serviceStatus === "active"
+                          ? "bg-green-100 text-green-700"
+                          : port.serviceStatus === "pending"
+                          ? "bg-yellow-100 text-yellow-700"
+                          : port.serviceStatus === "suspended"
+                          ? "bg-red-100 text-red-700"
+                          : "bg-gray-100 text-gray-700"
+                      }`}>
+                        {port.serviceStatus.charAt(0).toUpperCase() + port.serviceStatus.slice(1)}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Contact Info */}
+                  {port.customerPhone && (
+                    <a
+                      href={`tel:${port.customerPhone}`}
+                      className="text-xs text-blue-600 hover:underline mt-2 flex items-center gap-1"
+                    >
+                      <Phone className="w-3 h-3" />
+                      {port.customerPhone}
+                    </a>
+                  )}
+
+                  {/* Navigation Button */}
+                  <button
+                    onClick={() => openNavigation(port.customerGpsLat!, port.customerGpsLng!, port.customerName)}
+                    className="mt-2 w-full text-xs bg-blue-600 text-white px-3 py-1.5 rounded flex items-center justify-center gap-1 hover:bg-blue-700"
+                  >
+                    <Navigation className="w-3 h-3" />
+                    Navigate
+                  </button>
+
+                  <p className="text-xs text-gray-400 mt-2">
+                    {port.customerGpsLat?.toFixed(6)}, {port.customerGpsLng?.toFixed(6)}
+                  </p>
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
       </MapContainer>
 
-      {/* Legend */}
+      {/* Legend and Controls */}
       <div className="absolute top-4 right-4 z-[1000]">
-        <button
-          onClick={() => setShowLegend(!showLegend)}
-          className="p-2 bg-white rounded-lg shadow-md hover:bg-gray-50"
-          title="Toggle Legend"
-        >
-          <Layers className="w-5 h-5 text-gray-600" />
-        </button>
+        <div className="flex gap-2">
+          {/* Customer Toggle */}
+          {customerPorts && customerPorts.length > 0 && (
+            <button
+              onClick={() => setShowCustomers(!showCustomers)}
+              className={`p-2 rounded-lg shadow-md ${
+                showCustomers ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"
+              }`}
+              title={showCustomers ? "Hide Customers" : "Show Customers"}
+            >
+              <Users className="w-5 h-5" />
+            </button>
+          )}
+
+          {/* Legend Toggle */}
+          <button
+            onClick={() => setShowLegend(!showLegend)}
+            className="p-2 bg-white rounded-lg shadow-md hover:bg-gray-50"
+            title="Toggle Legend"
+          >
+            <Layers className="w-5 h-5 text-gray-600" />
+          </button>
+        </div>
 
         {showLegend && (
-          <div className="mt-2 bg-white rounded-lg shadow-md p-3 text-sm">
-            <div className="font-medium text-gray-700 mb-2">Legend</div>
+          <div className="mt-2 bg-white rounded-lg shadow-md p-3 text-sm max-h-[60vh] overflow-y-auto">
+            <div className="font-medium text-gray-700 mb-2">Network Points</div>
             <div className="space-y-1">
               {Object.entries(ENCLOSURE_COLORS).map(([type, color]) => (
                 <div key={type} className="flex items-center gap-2">
@@ -499,6 +703,34 @@ export default function GpsMap({ projectId, onEnclosureClick }: GpsMapProps) {
                 </div>
               ))}
             </div>
+
+            {/* Customer Legend */}
+            {customerPorts && customerPorts.length > 0 && (
+              <div className="mt-2 pt-2 border-t space-y-1">
+                <div className="text-xs font-medium text-gray-500 mb-1">Customers (Signal)</div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded bg-green-500" />
+                  <span className="text-gray-600 text-xs">Good ({">"}-25 dBm)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded bg-yellow-500" />
+                  <span className="text-gray-600 text-xs">Fair (-25 to -27 dBm)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded bg-orange-500" />
+                  <span className="text-gray-600 text-xs">Poor (-27 to -28 dBm)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded bg-red-500" />
+                  <span className="text-gray-600 text-xs">Critical ({"<"}-28 dBm)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded bg-gray-400" />
+                  <span className="text-gray-600 text-xs">No signal data</span>
+                </div>
+              </div>
+            )}
+
             {routeLines.length > 0 && (
               <div className="mt-2 pt-2 border-t space-y-1">
                 <div className="text-xs font-medium text-gray-500 mb-1">Connections</div>
@@ -545,6 +777,12 @@ export default function GpsMap({ projectId, onEnclosureClick }: GpsMapProps) {
           {(olts?.length || 0) + (enclosures?.length || 0)} point{(olts?.length || 0) + (enclosures?.length || 0) !== 1 ? "s" : ""} with GPS
           {olts && olts.length > 0 && (
             <span className="text-teal-600 ml-2">({olts.length} OLT{olts.length !== 1 ? "s" : ""})</span>
+          )}
+          {customerPorts && customerPorts.length > 0 && showCustomers && (
+            <span className="text-blue-600 ml-2">
+              <Users className="w-3 h-3 inline mr-1" />
+              {customerPorts.length} customer{customerPorts.length !== 1 ? "s" : ""}
+            </span>
           )}
         </span>
       </div>

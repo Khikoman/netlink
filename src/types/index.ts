@@ -107,6 +107,8 @@ export type PortType = "input" | "output" | "bidirectional";
 export type PortStatus = "available" | "connected" | "reserved" | "faulty";
 export type ConnectorType = "LC" | "SC" | "FC" | "ST" | "MPO" | "MTP";
 
+export type ServiceStatus = "active" | "suspended" | "pending" | "terminated";
+
 export interface Port {
   id?: number;
   enclosureId: number;
@@ -125,6 +127,28 @@ export interface Port {
   customerName?: string;
   customerAddress?: string;
   serviceId?: string; // Account/Service ID
+
+  // Customer contact info
+  customerPhone?: string;
+  customerEmail?: string;
+
+  // Customer GPS location
+  customerGpsLat?: number;
+  customerGpsLng?: number;
+
+  // ONU Optical Readings
+  onuRxPower?: number; // dBm - Signal ONU receives
+  onuTxPower?: number; // dBm - Signal ONU transmits
+  oltRxPower?: number; // dBm - Signal OLT receives from this ONU
+  onuModel?: string; // ONU device model
+  onuSerial?: string; // ONU serial number
+  onuMac?: string; // ONU MAC address
+  lastReadingDate?: Date; // When readings were taken
+
+  // Service info
+  serviceStatus?: ServiceStatus;
+  installDate?: Date;
+  planType?: string; // Service plan name
 
   notes?: string;
   createdAt: Date;
@@ -341,4 +365,23 @@ export interface SyncQueueItem {
   data: string; // JSON stringified
   timestamp: Date;
   synced: boolean;
+}
+
+// ============================================
+// CUSTOMER ATTACHMENT TYPES
+// ============================================
+
+export type AttachmentType = "photo" | "document" | "signature" | "id" | "contract" | "other";
+
+export interface CustomerAttachment {
+  id?: number;
+  portId: number; // Link to customer port
+  projectId: number;
+  filename: string;
+  mimeType: string; // image/jpeg, application/pdf, etc.
+  fileSize: number; // bytes
+  blob: Blob; // The actual file data
+  attachmentType: AttachmentType;
+  description?: string;
+  uploadedAt: Date;
 }
