@@ -18,6 +18,7 @@ import {
 import PortGrid, { PortStatusSummary } from "../port/PortGrid";
 import SplitterCard, { SplitterTypeSelector } from "../port/SplitterCard";
 import PortConnectionModal from "../port/PortConnectionModal";
+import { ConfirmModal } from "../ui/Modal";
 import dynamic from "next/dynamic";
 
 const LocationPicker = dynamic(() => import("@/components/map/LocationPicker"), {
@@ -36,6 +37,8 @@ export default function LCPManager({ projectId }: LCPManagerProps) {
   const [showCreatePort, setShowCreatePort] = useState<number | null>(null);
   const [selectedPort, setSelectedPort] = useState<Port | null>(null);
   const [selectedLCPForPort, setSelectedLCPForPort] = useState<Enclosure | null>(null);
+  const [deleteSplitterConfirm, setDeleteSplitterConfirm] = useState<Splitter | null>(null);
+  const [deleteLCPConfirm, setDeleteLCPConfirm] = useState<Enclosure | null>(null);
 
   // Form state for new LCP
   const [lcpName, setLcpName] = useState("");
@@ -136,18 +139,16 @@ export default function LCPManager({ projectId }: LCPManagerProps) {
     setShowCreatePort(null);
   };
 
-  const handleDeleteSplitter = async (splitter: Splitter) => {
-    if (!splitter.id) return;
-    if (confirm(`Delete splitter "${splitter.name}" and all its ports?`)) {
-      await deleteSplitter(splitter.id);
-    }
+  const handleDeleteSplitter = async () => {
+    if (!deleteSplitterConfirm?.id) return;
+    await deleteSplitter(deleteSplitterConfirm.id);
+    setDeleteSplitterConfirm(null);
   };
 
-  const handleDeleteLCP = async (lcp: Enclosure) => {
-    if (!lcp.id) return;
-    if (confirm(`Delete LCP "${lcp.name}" and all its splitters and ports?`)) {
-      await deleteEnclosure(lcp.id);
-    }
+  const handleDeleteLCP = async () => {
+    if (!deleteLCPConfirm?.id) return;
+    await deleteEnclosure(deleteLCPConfirm.id);
+    setDeleteLCPConfirm(null);
   };
 
   return (
@@ -250,7 +251,7 @@ export default function LCPManager({ projectId }: LCPManagerProps) {
               lcp={lcp}
               isExpanded={expandedLCP === lcp.id}
               onToggle={() => setExpandedLCP(expandedLCP === lcp.id ? null : lcp.id!)}
-              onDelete={() => handleDeleteLCP(lcp)}
+              onDelete={() => setDeleteLCPConfirm(lcp)}
               onCreateSplitter={() => setShowCreateSplitter(lcp.id!)}
               onCreatePort={() => setShowCreatePort(lcp.id!)}
               onPortClick={(port) => {
@@ -273,7 +274,7 @@ export default function LCPManager({ projectId }: LCPManagerProps) {
               setConnectorType={setConnectorType}
               onSubmitPorts={() => handleCreatePorts(lcp.id!)}
               onCancelPorts={() => setShowCreatePort(null)}
-              onDeleteSplitter={handleDeleteSplitter}
+              onDeleteSplitter={(splitter) => setDeleteSplitterConfirm(splitter)}
             />
           ))}
         </div>
@@ -294,6 +295,28 @@ export default function LCPManager({ projectId }: LCPManagerProps) {
           }}
         />
       )}
+
+      {/* Delete Splitter Confirmation Modal */}
+      <ConfirmModal
+        isOpen={deleteSplitterConfirm !== null}
+        onClose={() => setDeleteSplitterConfirm(null)}
+        onConfirm={handleDeleteSplitter}
+        title="Delete Splitter"
+        message={`Are you sure you want to delete "${deleteSplitterConfirm?.name}" and all its ports? This cannot be undone.`}
+        confirmText="Delete"
+        variant="danger"
+      />
+
+      {/* Delete LCP Confirmation Modal */}
+      <ConfirmModal
+        isOpen={deleteLCPConfirm !== null}
+        onClose={() => setDeleteLCPConfirm(null)}
+        onConfirm={handleDeleteLCP}
+        title="Delete LCP"
+        message={`Are you sure you want to delete "${deleteLCPConfirm?.name}" and all its splitters and ports? This cannot be undone.`}
+        confirmText="Delete"
+        variant="danger"
+      />
     </div>
   );
 }

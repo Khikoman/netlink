@@ -514,6 +514,24 @@ export default function PortConnectionModal({
                   />
                 </div>
               </div>
+
+              {/* Installation Notes / Comments */}
+              <div className="p-3 bg-amber-50 rounded-lg">
+                <label className="block text-sm font-medium text-amber-800 mb-2">
+                  <FileText className="w-4 h-4 inline mr-1" />
+                  Installation Notes / Comments
+                </label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Add notes about the installation, customer requests, technician remarks, issues encountered, etc."
+                  rows={4}
+                  className="w-full px-3 py-2 border border-amber-200 rounded-lg text-gray-800 text-sm resize-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
+                />
+                <p className="text-xs text-amber-600 mt-1">
+                  Notes visible to technicians and support staff
+                </p>
+              </div>
             </div>
           )}
 

@@ -47,6 +47,9 @@ const ProjectWizard = dynamic(() => import("@/components/ProjectWizard"), {
 const UnifiedHierarchyBrowser = dynamic(() => import("@/components/hierarchy/UnifiedHierarchyBrowser"), {
   loading: () => <CardSkeleton />,
 });
+const NetworkTopologyTree = dynamic(() => import("@/components/topology/NetworkTopologyTree"), {
+  loading: () => <CardSkeleton />,
+});
 
 // Navigation structure - Simplified: merged splice/distribution/hierarchy into "network"
 type TabGroup = "home" | "tools" | "network" | "analysis" | "inventory" | "map";
@@ -57,6 +60,7 @@ type Tab =
   | "overview"
   | "reference"
   | "hierarchy"
+  | "topology"
   | "spliceMatrix"
   | "lossBudget"
   | "otdr"
@@ -77,8 +81,9 @@ const tabs: TabConfig[] = [
   { id: "reverse", label: "Color to #", group: "tools" },
   { id: "overview", label: "Cable View", group: "tools" },
   { id: "reference", label: "Reference", group: "tools" },
-  // Network group (unified: hierarchy + splice matrix)
+  // Network group (unified: hierarchy + topology + splice matrix)
   { id: "hierarchy", label: "Hierarchy", group: "network" },
+  { id: "topology", label: "Topology", group: "network" },
   { id: "spliceMatrix", label: "Splice Matrix", group: "network" },
   // Analysis group
   { id: "lossBudget", label: "Loss Budget", group: "analysis" },
@@ -253,7 +258,7 @@ export default function HomePage() {
               <button
                 key={group}
                 onClick={() => handleGroupChange(group)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-all ${
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
                   activeGroup === group
                     ? "bg-blue-600 text-white shadow-md"
                     : "text-gray-600 hover:bg-gray-100"
@@ -276,7 +281,7 @@ export default function HomePage() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`px-4 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-all ${
+                  className={`px-4 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${
                     activeTab === tab.id
                       ? "bg-white text-blue-600 shadow-sm"
                       : "text-gray-500 hover:text-gray-700"
@@ -299,7 +304,7 @@ export default function HomePage() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                  className={`flex-shrink-0 px-4 py-2.5 rounded-full text-sm font-medium transition-all min-h-[40px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${
                     activeTab === tab.id
                       ? "bg-blue-600 text-white"
                       : "bg-white text-gray-600 border border-gray-200"
@@ -314,7 +319,7 @@ export default function HomePage() {
       )}
 
       {/* Main Content */}
-      <main className="max-w-6xl mx-auto px-4 py-6">
+      <main id="main-content" className="max-w-6xl mx-auto px-4 py-6">
         {/* Dashboard */}
         {activeTab === "dashboard" && (
           <Dashboard
@@ -339,6 +344,26 @@ export default function HomePage() {
             <h3 className="text-lg font-medium text-gray-700 mb-2">Select a Project First</h3>
             <p className="text-gray-500 mb-4">
               Please select a project from the Dashboard to browse network hierarchy
+            </p>
+            <button
+              onClick={() => handleNavigate("dashboard")}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Go to Dashboard
+            </button>
+          </div>
+        )}
+
+        {/* Network - Topology Tree View */}
+        {activeTab === "topology" && selectedProjectId && (
+          <NetworkTopologyTree projectId={selectedProjectId} />
+        )}
+        {activeTab === "topology" && !selectedProjectId && (
+          <div className="text-center py-12 bg-white rounded-2xl shadow-lg">
+            <Network className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+            <h3 className="text-lg font-medium text-gray-700 mb-2">Select a Project First</h3>
+            <p className="text-gray-500 mb-4">
+              Please select a project from the Dashboard to view network topology
             </p>
             <button
               onClick={() => handleNavigate("dashboard")}

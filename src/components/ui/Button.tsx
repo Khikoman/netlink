@@ -23,10 +23,11 @@ const variantStyles: Record<ButtonVariant, string> = {
   success: "bg-green-600 text-white hover:bg-green-700 active:bg-green-800 focus:ring-green-500",
 };
 
+// Updated to meet 44px minimum touch target for mobile accessibility (WCAG 2.5.5)
 const sizeStyles: Record<ButtonSize, string> = {
-  sm: "px-3 py-1.5 text-sm gap-1.5",
-  md: "px-4 py-2 text-base gap-2",
-  lg: "px-6 py-3 text-lg gap-2.5",
+  sm: "px-3 py-2.5 text-sm gap-1.5 min-h-[40px]",
+  md: "px-4 py-3 text-base gap-2 min-h-[44px]",
+  lg: "px-6 py-3.5 text-lg gap-2.5 min-h-[52px]",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
@@ -87,10 +88,11 @@ interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
   ({ variant = "ghost", size = "md", icon, className = "", ...props }, ref) => {
+    // Updated to meet 44px minimum touch target for mobile accessibility (WCAG 2.5.5)
     const iconSizeStyles: Record<ButtonSize, string> = {
-      sm: "p-1.5",
-      md: "p-2",
-      lg: "p-3",
+      sm: "p-2.5 min-w-[40px] min-h-[40px]",
+      md: "p-3 min-w-[44px] min-h-[44px]",
+      lg: "p-3.5 min-w-[52px] min-h-[52px]",
     };
 
     return (

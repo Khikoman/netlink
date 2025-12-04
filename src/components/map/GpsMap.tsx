@@ -1011,8 +1011,8 @@ export default function GpsMap({ projectId, onEnclosureClick }: GpsMapProps) {
         ) : (
           <button
             onClick={() => setShowSearch(true)}
-            className="p-2 bg-white rounded-lg shadow-md hover:bg-gray-50"
-            title="Search"
+            className="p-3 min-w-[44px] min-h-[44px] bg-white rounded-lg shadow-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            aria-label="Search locations"
           >
             <Search className="w-5 h-5 text-gray-600" />
           </button>
@@ -1025,10 +1025,11 @@ export default function GpsMap({ projectId, onEnclosureClick }: GpsMapProps) {
           <div className="flex gap-2">
             <button
               onClick={() => setShowLayerPanel(!showLayerPanel)}
-              className={`p-2 rounded-lg shadow-md ${
+              className={`p-3 min-w-[44px] min-h-[44px] rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                 showLayerPanel ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"
               }`}
-              title="Layer Controls"
+              aria-label="Layer controls"
+              aria-expanded={showLayerPanel}
             >
               <Filter className="w-5 h-5" />
             </button>
@@ -1087,8 +1088,9 @@ export default function GpsMap({ projectId, onEnclosureClick }: GpsMapProps) {
       <div className="absolute top-4 right-4 z-[1000]">
         <button
           onClick={() => setShowLegend(!showLegend)}
-          className="p-2 bg-white rounded-lg shadow-md hover:bg-gray-50"
-          title="Toggle Legend"
+          className="p-3 min-w-[44px] min-h-[44px] bg-white rounded-lg shadow-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          aria-label="Toggle map legend"
+          aria-expanded={showLegend}
         >
           <Layers className="w-5 h-5 text-gray-600" />
         </button>

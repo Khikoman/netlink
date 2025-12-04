@@ -8,6 +8,7 @@ import {
   getLCPsByClosure,
   getClosureHierarchyStats,
   getClosureContents,
+  getClosuresByODF,
 } from "./index";
 import type {
   Project,
@@ -21,6 +22,8 @@ import type {
   MapRoute,
   OLT,
   OLTPonPort,
+  ODF,
+  ODFPort,
 } from "@/types";
 
 // ============================================
@@ -244,6 +247,73 @@ export function useOLTPonPorts(oltId: number | undefined) {
 
 export function useOLTPonPort(id: number | undefined) {
   return useLiveQuery(() => (id ? db.oltPonPorts.get(id) : undefined), [id]);
+}
+
+// ============================================
+// ODF HOOKS
+// ============================================
+
+export function useODFs(projectId: number | undefined) {
+  return useLiveQuery(
+    () => (projectId ? db.odfs.where("projectId").equals(projectId).toArray() : []),
+    [projectId]
+  );
+}
+
+export function useODFsByOLT(oltId: number | undefined) {
+  return useLiveQuery(
+    () => (oltId ? db.odfs.where("oltId").equals(oltId).toArray() : []),
+    [oltId]
+  );
+}
+
+export function useODF(id: number | undefined) {
+  return useLiveQuery(() => (id ? db.odfs.get(id) : undefined), [id]);
+}
+
+export function useODFPorts(odfId: number | undefined) {
+  return useLiveQuery(
+    async () => {
+      if (!odfId) return [];
+      const ports = await db.odfPorts.where("odfId").equals(odfId).toArray();
+      return ports.sort((a, b) => a.portNumber - b.portNumber);
+    },
+    [odfId]
+  );
+}
+
+export function useODFPort(id: number | undefined) {
+  return useLiveQuery(() => (id ? db.odfPorts.get(id) : undefined), [id]);
+}
+
+export function useODFPortStats(odfId: number | undefined) {
+  return useLiveQuery(
+    async () => {
+      if (!odfId) return null;
+      const ports = await db.odfPorts.where("odfId").equals(odfId).toArray();
+      return {
+        total: ports.length,
+        available: ports.filter((p) => p.status === "available").length,
+        connected: ports.filter((p) => p.status === "connected").length,
+        reserved: ports.filter((p) => p.status === "reserved").length,
+        faulty: ports.filter((p) => p.status === "faulty").length,
+      };
+    },
+    [odfId]
+  );
+}
+
+/**
+ * Get closures connected to an ODF via ODF ports
+ */
+export function useClosuresByODF(odfId: number | undefined) {
+  return useLiveQuery(
+    async () => {
+      if (!odfId) return [];
+      return getClosuresByODF(odfId);
+    },
+    [odfId]
+  );
 }
 
 // ============================================

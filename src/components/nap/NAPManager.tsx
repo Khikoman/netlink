@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import PortGrid, { PortStatusSummary } from "../port/PortGrid";
 import PortConnectionModal from "../port/PortConnectionModal";
+import { ConfirmModal } from "../ui/Modal";
 import dynamic from "next/dynamic";
 
 const LocationPicker = dynamic(() => import("@/components/map/LocationPicker"), {
@@ -35,6 +36,7 @@ export default function NAPManager({ projectId }: NAPManagerProps) {
   const [selectedPort, setSelectedPort] = useState<Port | null>(null);
   const [selectedNAPForPort, setSelectedNAPForPort] = useState<Enclosure | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState<Enclosure | null>(null);
 
   // Form state for new NAP
   const [napName, setNapName] = useState("");
@@ -132,11 +134,10 @@ export default function NAPManager({ projectId }: NAPManagerProps) {
     setShowCreatePort(null);
   };
 
-  const handleDeleteNAP = async (nap: Enclosure) => {
-    if (!nap.id) return;
-    if (confirm(`Delete NAP "${nap.name}" and all its customer connections?`)) {
-      await deleteEnclosure(nap.id);
-    }
+  const handleDeleteNAP = async () => {
+    if (!deleteConfirm?.id) return;
+    await deleteEnclosure(deleteConfirm.id);
+    setDeleteConfirm(null);
   };
 
   return (
@@ -276,7 +277,7 @@ export default function NAPManager({ projectId }: NAPManagerProps) {
               projectId={projectId}
               isExpanded={expandedNAP === nap.id}
               onToggle={() => setExpandedNAP(expandedNAP === nap.id ? null : nap.id!)}
-              onDelete={() => handleDeleteNAP(nap)}
+              onDelete={() => setDeleteConfirm(nap)}
               onAddPorts={() => setShowCreatePort(nap.id!)}
               onPortClick={(port) => {
                 setSelectedPort(port);
@@ -310,6 +311,17 @@ export default function NAPManager({ projectId }: NAPManagerProps) {
           }}
         />
       )}
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={deleteConfirm !== null}
+        onClose={() => setDeleteConfirm(null)}
+        onConfirm={handleDeleteNAP}
+        title="Delete NAP"
+        message={`Are you sure you want to delete "${deleteConfirm?.name}" and all its customer connections? This cannot be undone.`}
+        confirmText="Delete"
+        variant="danger"
+      />
     </div>
   );
 }

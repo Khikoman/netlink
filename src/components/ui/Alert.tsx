@@ -63,6 +63,8 @@ export function Alert({
         ${className}
       `}
       role="alert"
+      aria-live="polite"
+      aria-atomic="true"
     >
       <div className="flex">
         <div className={`flex-shrink-0 ${styles.icon}`}>{icons[variant]}</div>

@@ -17,6 +17,8 @@ import type {
   OLT,
   OLTPonPort,
   CustomerAttachment,
+  ODF,
+  ODFPort,
 } from "@/types";
 
 // NetLink Database using Dexie.js (IndexedDB wrapper)
@@ -39,6 +41,8 @@ class NetLinkDB extends Dexie {
   olts!: EntityTable<OLT, "id">;
   oltPonPorts!: EntityTable<OLTPonPort, "id">;
   customerAttachments!: EntityTable<CustomerAttachment, "id">;
+  odfs!: EntityTable<ODF, "id">;
+  odfPorts!: EntityTable<ODFPort, "id">;
 
   constructor() {
     super("NetLinkDB");
@@ -117,6 +121,30 @@ class NetLinkDB extends Dexie {
       olts: "++id, projectId, name",
       oltPonPorts: "++id, oltId, portNumber, status",
       customerAttachments: "++id, portId, projectId, attachmentType, uploadedAt",
+    });
+
+    // Version 5: Add ODF support for complete network topology
+    // OLT → ODF → Primary Closure → Secondary Closure → LCP → NAP → Customer
+    this.version(5).stores({
+      projects: "++id, name, status, createdAt",
+      enclosures: "++id, projectId, name, type, parentType, parentId, hierarchyLevel, odfPortId",
+      trays: "++id, enclosureId, number",
+      cables: "++id, projectId, name, fiberCount, role",
+      splices: "++id, trayId, cableAId, cableBId, fiberA, fiberB, status, timestamp",
+      otdrTraces: "++id, spliceId, wavelength, uploadedAt",
+      inventory: "++id, category, name, partNumber",
+      inventoryUsage: "++id, inventoryId, projectId, date",
+      lossBudgets: "++id, [input.name], createdAt",
+      mapNodes: "++id, projectId, type, enclosureId",
+      mapRoutes: "++id, projectId, fromNodeId, toNodeId, cableId",
+      syncQueue: "++id, table, recordId, synced, timestamp",
+      splitters: "++id, enclosureId, name, type",
+      ports: "++id, enclosureId, splitterId, portNumber, status",
+      olts: "++id, projectId, name",
+      oltPonPorts: "++id, oltId, portNumber, status",
+      customerAttachments: "++id, portId, projectId, attachmentType, uploadedAt",
+      odfs: "++id, projectId, oltId, name",
+      odfPorts: "++id, odfId, portNumber, status, ponPortId, closureId",
     });
   }
 }
@@ -634,7 +662,115 @@ export async function deleteOLTPonPort(id: number) {
       await db.enclosures.update(lcp.id, { oltPonPortId: undefined });
     }
   }
+  // Clear ponPortId on any ODF ports using this port
+  const odfPorts = await db.odfPorts.filter((p) => p.ponPortId === id).toArray();
+  for (const port of odfPorts) {
+    if (port.id) {
+      await db.odfPorts.update(port.id, { ponPortId: undefined });
+    }
+  }
   return db.oltPonPorts.delete(id);
+}
+
+// ============================================
+// ODF OPERATIONS
+// ============================================
+
+export async function createODF(odf: Omit<ODF, "id" | "createdAt">): Promise<number> {
+  const id = await db.odfs.add({
+    ...odf,
+    createdAt: new Date(),
+  });
+  return id as number;
+}
+
+export async function getODFs(projectId: number) {
+  return db.odfs.where("projectId").equals(projectId).toArray();
+}
+
+export async function getODFsByOLT(oltId: number) {
+  return db.odfs.where("oltId").equals(oltId).toArray();
+}
+
+export async function getODF(id: number) {
+  return db.odfs.get(id);
+}
+
+export async function updateODF(id: number, updates: Partial<ODF>) {
+  return db.odfs.update(id, updates);
+}
+
+export async function deleteODF(id: number) {
+  // Delete all ODF ports
+  await db.odfPorts.where("odfId").equals(id).delete();
+  return db.odfs.delete(id);
+}
+
+// ============================================
+// ODF PORT OPERATIONS
+// ============================================
+
+export async function createODFPort(port: Omit<ODFPort, "id">): Promise<number> {
+  const id = await db.odfPorts.add(port);
+  return id as number;
+}
+
+export async function getODFPorts(odfId: number) {
+  const ports = await db.odfPorts.where("odfId").equals(odfId).toArray();
+  return ports.sort((a, b) => a.portNumber - b.portNumber);
+}
+
+export async function getODFPort(id: number) {
+  return db.odfPorts.get(id);
+}
+
+export async function updateODFPort(id: number, updates: Partial<ODFPort>) {
+  return db.odfPorts.update(id, updates);
+}
+
+export async function deleteODFPort(id: number) {
+  // Clear odfPortId on any closures using this port
+  const closures = await db.enclosures
+    .filter((e) => e.odfPortId === id)
+    .toArray();
+  for (const closure of closures) {
+    if (closure.id) {
+      await db.enclosures.update(closure.id, { odfPortId: undefined });
+    }
+  }
+  return db.odfPorts.delete(id);
+}
+
+export async function getAvailableODFPorts(odfId: number) {
+  const ports = await db.odfPorts.where("odfId").equals(odfId).toArray();
+  return ports.filter((p) => p.status === "available").sort((a, b) => a.portNumber - b.portNumber);
+}
+
+export async function getODFPortsByStatus(odfId: number, status: ODFPort["status"]) {
+  const ports = await db.odfPorts.where("odfId").equals(odfId).toArray();
+  return ports.filter((p) => p.status === status).sort((a, b) => a.portNumber - b.portNumber);
+}
+
+/**
+ * Get ODF port connected to a specific PON port
+ */
+export async function getODFPortByPonPort(ponPortId: number) {
+  return db.odfPorts.filter((p) => p.ponPortId === ponPortId).first();
+}
+
+/**
+ * Get closures connected to an ODF
+ */
+export async function getClosuresByODF(odfId: number) {
+  const odfPorts = await db.odfPorts.where("odfId").equals(odfId).toArray();
+  const closureIds = odfPorts
+    .filter((p) => p.closureId !== undefined)
+    .map((p) => p.closureId as number);
+
+  if (closureIds.length === 0) return [];
+
+  const closures = await Promise.all(closureIds.map((id) => db.enclosures.get(id)));
+  return closures.filter((c): c is Enclosure => c !== undefined);
 }
 
 // ============================================

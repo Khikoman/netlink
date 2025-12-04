@@ -45,6 +45,44 @@ export interface OLTPonPort {
   notes?: string;
 }
 
+// ============================================
+// ODF (Optical Distribution Frame) TYPES
+// ============================================
+
+export interface ODF {
+  id?: number;
+  projectId: number;
+  oltId: number;
+  name: string; // e.g., "ODF-A", "ODF-001"
+  portCount: number; // e.g., 48, 96, 144
+  location?: string; // Physical location description
+  gpsLat?: number;
+  gpsLng?: number;
+  notes?: string;
+  createdAt: Date;
+}
+
+export type ODFPortStatus = "available" | "connected" | "reserved" | "faulty";
+
+export interface ODFPort {
+  id?: number;
+  odfId: number;
+  portNumber: number; // 1, 2, 3...
+  label?: string; // e.g., "ODF-A-01"
+  status: ODFPortStatus;
+  ponPortId?: number; // Which PON port connects to this ODF port (input side)
+  closureId?: number; // Which primary closure this ODF port feeds (output side)
+  cableId?: number; // Feeder cable going to the closure
+  notes?: string;
+}
+
+// ============================================
+// ENCLOSURE TYPES
+// ============================================
+
+// Hierarchy levels for proper topology ordering
+export type HierarchyLevel = "primary-closure" | "secondary-closure" | "lcp" | "nap";
+
 export type EnclosureType =
   | "splice-closure"
   | "handhole"
@@ -57,7 +95,7 @@ export type EnclosureType =
   | "fdt"  // Fiber Distribution Terminal (alt for LCP)
   | "fat"; // Fiber Access Terminal (alt for NAP)
 
-export type EnclosureParentType = "olt" | "closure" | "lcp";
+export type EnclosureParentType = "olt" | "odf" | "closure" | "lcp";
 
 export interface Enclosure {
   id?: number;
@@ -66,10 +104,14 @@ export interface Enclosure {
   type: EnclosureType;
 
   // Parent hierarchy fields
-  // Hierarchy: OLT -> Closure (parentType: "olt") -> LCP (parentType: "closure") -> NAP (parentType: "lcp")
+  // Full Hierarchy: OLT -> ODF -> Primary Closure -> Secondary Closure -> LCP -> NAP
   parentType?: EnclosureParentType;
-  parentId?: number; // OLT id for Closure, Closure id for LCP, LCP id for NAP
+  parentId?: number; // ODF id for Primary Closure, Closure id for LCP, LCP id for NAP
   oltPonPortId?: number; // For LCPs: which PON port feeds this LCP
+  odfPortId?: number; // For Primary Closures: which ODF port feeds this closure
+
+  // Hierarchy level for topology ordering
+  hierarchyLevel?: HierarchyLevel;
 
   gpsLat?: number;
   gpsLng?: number;
@@ -158,6 +200,9 @@ export interface Port {
 // CABLE & SPLICE TYPES
 // ============================================
 
+// Cable role in the network hierarchy
+export type CableRole = "feeder-trunk" | "distribution" | "drop" | "patch";
+
 export interface Cable {
   id?: number;
   projectId?: number;
@@ -167,6 +212,7 @@ export interface Cable {
   lengthMeters?: number;
   reelNumber?: string;
   manufacturer?: string;
+  role?: CableRole; // Role in network hierarchy
   notes?: string;
 }
 

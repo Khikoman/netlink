@@ -191,6 +191,7 @@ export default function Dashboard({ onNavigate, onSelectProject }: DashboardProp
                       size="sm"
                       onClick={() => setDeleteConfirm(project)}
                       className="text-red-500 hover:bg-red-50"
+                      aria-label={`Delete project ${project.name}`}
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>
@@ -215,7 +216,7 @@ export default function Dashboard({ onNavigate, onSelectProject }: DashboardProp
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <button
             onClick={() => onNavigate("lookup")}
-            className="p-4 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-all text-left"
+            className="p-4 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-all text-left focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
           >
             <Search className="w-6 h-6 text-blue-600 mb-2" />
             <div className="font-medium text-gray-800">Fiber Lookup</div>
@@ -224,7 +225,7 @@ export default function Dashboard({ onNavigate, onSelectProject }: DashboardProp
 
           <button
             onClick={() => onNavigate("reverse")}
-            className="p-4 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-all text-left"
+            className="p-4 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-all text-left focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
           >
             <Palette className="w-6 h-6 text-green-600 mb-2" />
             <div className="font-medium text-gray-800">Color to #</div>
@@ -233,7 +234,7 @@ export default function Dashboard({ onNavigate, onSelectProject }: DashboardProp
 
           <button
             onClick={() => onNavigate("lossBudget")}
-            className="p-4 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-all text-left"
+            className="p-4 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-all text-left focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
           >
             <Calculator className="w-6 h-6 text-purple-600 mb-2" />
             <div className="font-medium text-gray-800">Loss Budget</div>
@@ -242,7 +243,7 @@ export default function Dashboard({ onNavigate, onSelectProject }: DashboardProp
 
           <button
             onClick={() => onNavigate("reference")}
-            className="p-4 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-all text-left"
+            className="p-4 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-all text-left focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
           >
             <Palette className="w-6 h-6 text-orange-600 mb-2" />
             <div className="font-medium text-gray-800">Color Chart</div>

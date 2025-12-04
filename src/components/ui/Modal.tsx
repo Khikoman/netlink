@@ -1,10 +1,71 @@
 "use client";
 
-import { useEffect, useCallback, type ReactNode } from "react";
+import { useEffect, useCallback, useRef, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { IconButton } from "./Button";
 
 export type ModalSize = "sm" | "md" | "lg" | "xl" | "full";
+
+// Focus trap hook for accessibility
+function useFocusTrap(isOpen: boolean) {
+  const modalRef = useRef<HTMLDivElement>(null);
+  const previousActiveElement = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      // Store the currently focused element
+      previousActiveElement.current = document.activeElement as HTMLElement;
+
+      // Focus the first focusable element in the modal
+      const focusableElements = modalRef.current?.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusableElements && focusableElements.length > 0) {
+        setTimeout(() => focusableElements[0].focus(), 0);
+      }
+    } else {
+      // Return focus to the previously focused element
+      previousActiveElement.current?.focus();
+    }
+  }, [isOpen]);
+
+  const handleTabKey = useCallback((e: KeyboardEvent) => {
+    if (e.key !== "Tab" || !modalRef.current) return;
+
+    const focusableElements = modalRef.current.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    if (focusableElements.length === 0) return;
+
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+
+    if (e.shiftKey) {
+      // Shift + Tab
+      if (document.activeElement === firstElement) {
+        e.preventDefault();
+        lastElement.focus();
+      }
+    } else {
+      // Tab
+      if (document.activeElement === lastElement) {
+        e.preventDefault();
+        firstElement.focus();
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      document.addEventListener("keydown", handleTabKey);
+    }
+    return () => {
+      document.removeEventListener("keydown", handleTabKey);
+    };
+  }, [isOpen, handleTabKey]);
+
+  return modalRef;
+}
 
 interface ModalProps {
   isOpen: boolean;
@@ -18,12 +79,13 @@ interface ModalProps {
   footer?: ReactNode;
 }
 
+// Updated for better mobile responsiveness
 const sizeStyles: Record<ModalSize, string> = {
-  sm: "max-w-sm",
-  md: "max-w-md",
-  lg: "max-w-lg",
-  xl: "max-w-xl",
-  full: "max-w-4xl",
+  sm: "max-w-sm w-full",
+  md: "max-w-md w-full",
+  lg: "max-w-lg w-full",
+  xl: "max-w-xl w-full",
+  full: "max-w-2xl w-full", // Reduced from max-w-4xl for better mobile experience
 };
 
 export function Modal({
@@ -37,6 +99,9 @@ export function Modal({
   closeOnEscape = true,
   footer,
 }: ModalProps) {
+  // Focus trap for accessibility
+  const modalRef = useFocusTrap(isOpen);
+
   const handleEscape = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === "Escape" && closeOnEscape) {
@@ -71,6 +136,7 @@ export function Modal({
 
       {/* Modal */}
       <div
+        ref={modalRef}
         className={`
           relative w-full ${sizeStyles[size]}
           bg-white rounded-2xl shadow-2xl

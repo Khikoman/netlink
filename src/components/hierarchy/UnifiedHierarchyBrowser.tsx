@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db, createOLT, createEnclosure, createPort, createTray, createSplitter } from "@/lib/db";
+import { db, createOLT, updateOLT, createEnclosure, updateEnclosure, createPort, createTray, createSplitter } from "@/lib/db";
+import LocationPicker from "@/components/map/LocationPicker";
 import {
   useOLTs,
   useOLT,
@@ -15,8 +16,10 @@ import {
   useLCPHierarchyStats,
   useNAPPortStats,
   useClosureContents,
+  useODFsByOLT,
 } from "@/lib/db/hooks";
 import type { OLT, Enclosure, Port, Tray, Splitter } from "@/types";
+import ODFManager from "@/components/odf/ODFManager";
 import {
   Server,
   Link2,
@@ -31,6 +34,8 @@ import {
   X,
   Layers,
   Grid3X3,
+  Pencil,
+  Navigation,
 } from "lucide-react";
 import { PortStatusSummary } from "@/components/port/PortGrid";
 import PortConnectionModal from "@/components/port/PortConnectionModal";
@@ -60,13 +65,25 @@ export default function UnifiedHierarchyBrowser({ projectId }: UnifiedHierarchyB
   const [showLCPForm, setShowLCPForm] = useState(false);
   const [showNAPForm, setShowNAPForm] = useState(false);
 
+  // Edit states - which record is being edited
+  const [editingOLT, setEditingOLT] = useState<OLT | null>(null);
+  const [editingClosure, setEditingClosure] = useState<Enclosure | null>(null);
+  const [editingLCP, setEditingLCP] = useState<Enclosure | null>(null);
+  const [editingNAP, setEditingNAP] = useState<Enclosure | null>(null);
+
   // Port editor states
   const [selectedPort, setSelectedPort] = useState<Port | null>(null);
   const [selectedNAPForPort, setSelectedNAPForPort] = useState<Enclosure | null>(null);
 
+  // ODF expanded state
+  const [showODFs, setShowODFs] = useState(false);
+
   // Data
   const olts = useOLTs(projectId);
   const selectedOLT = useOLT(state.selectedOLTId ?? undefined);
+
+  // ODFs under OLT
+  const odfs = useODFsByOLT(state.selectedOLTId ?? undefined);
 
   // Closures under OLT
   const closures = useClosuresByOLT(state.selectedOLTId ?? undefined);
@@ -145,6 +162,27 @@ export default function UnifiedHierarchyBrowser({ projectId }: UnifiedHierarchyB
     setState((prev) => ({ ...prev, selectedNAPId: null }));
   };
 
+  // Edit handlers
+  const startEditOLT = (olt: OLT) => {
+    setEditingOLT(olt);
+    setShowOLTForm(true);
+  };
+
+  const startEditClosure = (closure: Enclosure) => {
+    setEditingClosure(closure);
+    setShowClosureForm(true);
+  };
+
+  const startEditLCP = (lcp: Enclosure) => {
+    setEditingLCP(lcp);
+    setShowLCPForm(true);
+  };
+
+  const startEditNAP = (nap: Enclosure) => {
+    setEditingNAP(nap);
+    setShowNAPForm(true);
+  };
+
   return (
     <div className="space-y-4">
       {/* Breadcrumb */}
@@ -166,7 +204,8 @@ export default function UnifiedHierarchyBrowser({ projectId }: UnifiedHierarchyB
           olts={olts || []}
           selectedId={state.selectedOLTId}
           onSelect={selectOLT}
-          onAdd={() => setShowOLTForm(true)}
+          onEdit={startEditOLT}
+          onAdd={() => { setEditingOLT(null); setShowOLTForm(true); }}
           stats={state.selectedOLTId ? oltStats : undefined}
         />
 
@@ -176,7 +215,8 @@ export default function UnifiedHierarchyBrowser({ projectId }: UnifiedHierarchyB
             closures={closures || []}
             selectedId={state.selectedClosureId}
             onSelect={selectClosure}
-            onAdd={() => setShowClosureForm(true)}
+            onEdit={startEditClosure}
+            onAdd={() => { setEditingClosure(null); setShowClosureForm(true); }}
             stats={state.selectedClosureId ? closureStats : undefined}
             oltName={selectedOLT?.name}
             hasLegacyLCPs={hasLegacyLCPs}
@@ -189,7 +229,8 @@ export default function UnifiedHierarchyBrowser({ projectId }: UnifiedHierarchyB
             lcps={lcps || []}
             selectedId={state.selectedLCPId}
             onSelect={selectLCP}
-            onAdd={() => setShowLCPForm(true)}
+            onEdit={startEditLCP}
+            onAdd={() => { setEditingLCP(null); setShowLCPForm(true); }}
             stats={state.selectedLCPId ? lcpStats : undefined}
             parentName={selectedClosure?.name}
           />
@@ -201,7 +242,8 @@ export default function UnifiedHierarchyBrowser({ projectId }: UnifiedHierarchyB
             naps={naps || []}
             selectedId={state.selectedNAPId}
             onSelect={selectNAP}
-            onAdd={() => setShowNAPForm(true)}
+            onEdit={startEditNAP}
+            onAdd={() => { setEditingNAP(null); setShowNAPForm(true); }}
             stats={state.selectedNAPId ? napStats : undefined}
             lcpName={selectedLCP?.name}
           />
@@ -229,6 +271,38 @@ export default function UnifiedHierarchyBrowser({ projectId }: UnifiedHierarchyB
         />
       )}
 
+      {/* ODF Management - When OLT selected */}
+      {state.selectedOLTId && selectedOLT && (
+        <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+          <button
+            onClick={() => setShowODFs(!showODFs)}
+            className="w-full flex items-center justify-between px-4 py-3 bg-gradient-to-r from-teal-50 to-cyan-50 hover:from-teal-100 hover:to-cyan-100 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <Server className="w-5 h-5 text-teal-600" />
+              <span className="font-semibold text-gray-800">ODF Cabinets</span>
+              <span className="text-sm text-gray-500">
+                ({odfs?.length || 0} configured)
+              </span>
+            </div>
+            <ChevronRight
+              className={`w-5 h-5 text-gray-400 transition-transform ${
+                showODFs ? "rotate-90" : ""
+              }`}
+            />
+          </button>
+          {showODFs && (
+            <div className="p-4 border-t">
+              <ODFManager
+                projectId={projectId}
+                oltId={state.selectedOLTId}
+                oltName={selectedOLT.name}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Legacy LCPs Warning */}
       {hasLegacyLCPs && state.selectedOLTId && !state.selectedClosureId && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
@@ -249,9 +323,11 @@ export default function UnifiedHierarchyBrowser({ projectId }: UnifiedHierarchyB
       {showOLTForm && (
         <OLTFormModal
           projectId={projectId}
-          onClose={() => setShowOLTForm(false)}
-          onCreated={(id) => {
+          editingOLT={editingOLT}
+          onClose={() => { setShowOLTForm(false); setEditingOLT(null); }}
+          onSaved={(id) => {
             setShowOLTForm(false);
+            setEditingOLT(null);
             selectOLT(id);
           }}
         />
@@ -262,9 +338,11 @@ export default function UnifiedHierarchyBrowser({ projectId }: UnifiedHierarchyB
         <ClosureFormModal
           projectId={projectId}
           oltId={state.selectedOLTId}
-          onClose={() => setShowClosureForm(false)}
-          onCreated={(id) => {
+          editingClosure={editingClosure}
+          onClose={() => { setShowClosureForm(false); setEditingClosure(null); }}
+          onSaved={(id) => {
             setShowClosureForm(false);
+            setEditingClosure(null);
             selectClosure(id);
           }}
         />
@@ -275,9 +353,11 @@ export default function UnifiedHierarchyBrowser({ projectId }: UnifiedHierarchyB
         <LCPFormModal
           projectId={projectId}
           closureId={state.selectedClosureId}
-          onClose={() => setShowLCPForm(false)}
-          onCreated={(id) => {
+          editingLCP={editingLCP}
+          onClose={() => { setShowLCPForm(false); setEditingLCP(null); }}
+          onSaved={(id) => {
             setShowLCPForm(false);
+            setEditingLCP(null);
             selectLCP(id);
           }}
         />
@@ -288,9 +368,11 @@ export default function UnifiedHierarchyBrowser({ projectId }: UnifiedHierarchyB
         <NAPFormModal
           projectId={projectId}
           lcpId={state.selectedLCPId}
-          onClose={() => setShowNAPForm(false)}
-          onCreated={(id) => {
+          editingNAP={editingNAP}
+          onClose={() => { setShowNAPForm(false); setEditingNAP(null); }}
+          onSaved={(id) => {
             setShowNAPForm(false);
+            setEditingNAP(null);
             selectNAP(id);
           }}
         />
@@ -409,12 +491,14 @@ function OLTPanel({
   olts,
   selectedId,
   onSelect,
+  onEdit,
   onAdd,
   stats,
 }: {
   olts: OLT[];
   selectedId: number | null;
   onSelect: (id: number) => void;
+  onEdit: (olt: OLT) => void;
   onAdd: () => void;
   stats?: { closureCount?: number; lcpCount: number; napCount: number; customerCount: number; utilization: number } | null;
 }) {
@@ -437,23 +521,38 @@ function OLTPanel({
           </div>
         ) : (
           olts.map((olt) => (
-            <button
+            <div
               key={olt.id}
               onClick={() => onSelect(olt.id!)}
-              className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors ${
+              onDoubleClick={() => onEdit(olt)}
+              className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors cursor-pointer ${
                 selectedId === olt.id ? "bg-teal-50 border-l-4 border-teal-600" : ""
               }`}
             >
               <div className="flex items-center justify-between">
-                <div>
+                <div className="flex-1 min-w-0">
                   <div className="font-medium text-gray-800">{olt.name}</div>
                   {olt.model && (
                     <div className="text-xs text-gray-500">{olt.model}</div>
                   )}
+                  {olt.gpsLat && olt.gpsLng && (
+                    <div className="text-xs text-green-600 flex items-center gap-1 mt-0.5">
+                      <MapPin className="w-3 h-3" /> GPS
+                    </div>
+                  )}
                 </div>
-                <ChevronRight className="w-4 h-4 text-gray-400" />
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onEdit(olt); }}
+                    className="p-1.5 hover:bg-gray-200 rounded transition-colors"
+                    title="Edit OLT"
+                  >
+                    <Pencil className="w-3.5 h-3.5 text-gray-500" />
+                  </button>
+                  <ChevronRight className="w-4 h-4 text-gray-400" />
+                </div>
               </div>
-            </button>
+            </div>
           ))
         )}
       </div>
@@ -502,6 +601,7 @@ function ClosurePanel({
   closures,
   selectedId,
   onSelect,
+  onEdit,
   onAdd,
   stats,
   oltName,
@@ -510,6 +610,7 @@ function ClosurePanel({
   closures: Enclosure[];
   selectedId: number | null;
   onSelect: (id: number) => void;
+  onEdit: (closure: Enclosure) => void;
   onAdd: () => void;
   stats?: { lcpCount: number; napCount: number; customerCount: number; splitterCount: number; trayCount: number; utilization: number } | null;
   oltName?: string;
@@ -539,15 +640,16 @@ function ClosurePanel({
           </div>
         ) : (
           closures.map((closure) => (
-            <button
+            <div
               key={closure.id}
               onClick={() => onSelect(closure.id!)}
-              className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors ${
+              onDoubleClick={() => onEdit(closure)}
+              className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors cursor-pointer ${
                 selectedId === closure.id ? "bg-purple-50 border-l-4 border-purple-600" : ""
               }`}
             >
               <div className="flex items-center justify-between">
-                <div>
+                <div className="flex-1 min-w-0">
                   <div className="font-medium text-gray-800">{closure.name}</div>
                   {closure.address && (
                     <div className="text-xs text-gray-500 flex items-center gap-1">
@@ -555,10 +657,24 @@ function ClosurePanel({
                       {closure.address}
                     </div>
                   )}
+                  {closure.gpsLat && closure.gpsLng && (
+                    <div className="text-xs text-green-600 flex items-center gap-1 mt-0.5">
+                      <MapPin className="w-3 h-3" /> GPS
+                    </div>
+                  )}
                 </div>
-                <ChevronRight className="w-4 h-4 text-gray-400" />
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onEdit(closure); }}
+                    className="p-1.5 hover:bg-gray-200 rounded transition-colors"
+                    title="Edit Closure"
+                  >
+                    <Pencil className="w-3.5 h-3.5 text-gray-500" />
+                  </button>
+                  <ChevronRight className="w-4 h-4 text-gray-400" />
+                </div>
               </div>
-            </button>
+            </div>
           ))
         )}
       </div>
@@ -605,6 +721,7 @@ function LCPPanel({
   lcps,
   selectedId,
   onSelect,
+  onEdit,
   onAdd,
   stats,
   parentName,
@@ -612,6 +729,7 @@ function LCPPanel({
   lcps: Enclosure[];
   selectedId: number | null;
   onSelect: (id: number) => void;
+  onEdit: (lcp: Enclosure) => void;
   onAdd: () => void;
   stats?: { napCount: number; customerCount: number; utilization: number } | null;
   parentName?: string;
@@ -638,15 +756,16 @@ function LCPPanel({
           </div>
         ) : (
           lcps.map((lcp) => (
-            <button
+            <div
               key={lcp.id}
               onClick={() => onSelect(lcp.id!)}
-              className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors ${
+              onDoubleClick={() => onEdit(lcp)}
+              className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors cursor-pointer ${
                 selectedId === lcp.id ? "bg-orange-50 border-l-4 border-orange-600" : ""
               }`}
             >
               <div className="flex items-center justify-between">
-                <div>
+                <div className="flex-1 min-w-0">
                   <div className="font-medium text-gray-800">{lcp.name}</div>
                   {lcp.address && (
                     <div className="text-xs text-gray-500 flex items-center gap-1">
@@ -654,10 +773,28 @@ function LCPPanel({
                       {lcp.address}
                     </div>
                   )}
+                  {lcp.gpsLat && lcp.gpsLng && (
+                    <div className="text-xs text-green-600 flex items-center gap-1">
+                      <Navigation className="w-3 h-3" />
+                      GPS
+                    </div>
+                  )}
                 </div>
-                <ChevronRight className="w-4 h-4 text-gray-400" />
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdit(lcp);
+                    }}
+                    className="p-1 hover:bg-orange-100 rounded"
+                    title="Edit LCP"
+                  >
+                    <Pencil className="w-4 h-4 text-gray-500" />
+                  </button>
+                  <ChevronRight className="w-4 h-4 text-gray-400" />
+                </div>
               </div>
-            </button>
+            </div>
           ))
         )}
       </div>
@@ -700,6 +837,7 @@ function NAPPanel({
   naps,
   selectedId,
   onSelect,
+  onEdit,
   onAdd,
   stats,
   lcpName,
@@ -707,6 +845,7 @@ function NAPPanel({
   naps: Enclosure[];
   selectedId: number | null;
   onSelect: (id: number) => void;
+  onEdit: (nap: Enclosure) => void;
   onAdd: () => void;
   stats?: { total: number; available: number; connected: number; reserved: number; faulty: number } | null;
   lcpName?: string;
@@ -733,15 +872,16 @@ function NAPPanel({
           </div>
         ) : (
           naps.map((nap) => (
-            <button
+            <div
               key={nap.id}
               onClick={() => onSelect(nap.id!)}
-              className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors ${
+              onDoubleClick={() => onEdit(nap)}
+              className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors cursor-pointer ${
                 selectedId === nap.id ? "bg-cyan-50 border-l-4 border-cyan-600" : ""
               }`}
             >
               <div className="flex items-center justify-between">
-                <div>
+                <div className="flex-1 min-w-0">
                   <div className="font-medium text-gray-800">{nap.name}</div>
                   {nap.address && (
                     <div className="text-xs text-gray-500 flex items-center gap-1">
@@ -749,10 +889,28 @@ function NAPPanel({
                       {nap.address}
                     </div>
                   )}
+                  {nap.gpsLat && nap.gpsLng && (
+                    <div className="text-xs text-green-600 flex items-center gap-1">
+                      <Navigation className="w-3 h-3" />
+                      GPS
+                    </div>
+                  )}
                 </div>
-                <ChevronRight className="w-4 h-4 text-gray-400" />
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEdit(nap);
+                    }}
+                    className="p-1 hover:bg-cyan-100 rounded"
+                    title="Edit NAP"
+                  >
+                    <Pencil className="w-4 h-4 text-gray-500" />
+                  </button>
+                  <ChevronRight className="w-4 h-4 text-gray-400" />
+                </div>
               </div>
-            </button>
+            </div>
           ))
         )}
       </div>
@@ -936,40 +1094,94 @@ function NAPPortsDetail({
 
 function OLTFormModal({
   projectId,
+  editingOLT,
   onClose,
-  onCreated,
+  onSaved,
 }: {
   projectId: number;
+  editingOLT: OLT | null;
   onClose: () => void;
-  onCreated: (id: number) => void;
+  onSaved: (id: number) => void;
 }) {
-  const [name, setName] = useState("");
-  const [model, setModel] = useState("");
-  const [totalPonPorts, setTotalPonPorts] = useState(16);
+  const [name, setName] = useState(editingOLT?.name || "");
+  const [model, setModel] = useState(editingOLT?.model || "");
+  const [totalPonPorts, setTotalPonPorts] = useState(editingOLT?.totalPonPorts || 16);
+  const [gpsLat, setGpsLat] = useState<number | undefined>(editingOLT?.gpsLat);
+  const [gpsLng, setGpsLng] = useState<number | undefined>(editingOLT?.gpsLng);
+  const [address, setAddress] = useState(editingOLT?.address || "");
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {};
+    if (!name.trim()) {
+      newErrors.name = "OLT name is required";
+    }
+    if (gpsLat !== undefined && (gpsLat < -90 || gpsLat > 90)) {
+      newErrors.gps = "Latitude must be between -90 and 90";
+    }
+    if (gpsLng !== undefined && (gpsLng < -180 || gpsLng > 180)) {
+      newErrors.gps = "Longitude must be between -180 and 180";
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!validateForm()) return;
 
-    const id = await createOLT({
-      projectId,
-      name: name.trim(),
-      model: model.trim() || undefined,
-      totalPonPorts,
-    });
-    onCreated(id);
+    setSaving(true);
+    try {
+      if (editingOLT) {
+        // Update existing OLT
+        await updateOLT(editingOLT.id!, {
+          name: name.trim(),
+          model: model.trim() || undefined,
+          totalPonPorts,
+          gpsLat,
+          gpsLng,
+          address: address.trim() || undefined,
+        });
+        onSaved(editingOLT.id!);
+      } else {
+        // Create new OLT
+        const id = await createOLT({
+          projectId,
+          name: name.trim(),
+          model: model.trim() || undefined,
+          totalPonPorts,
+          gpsLat,
+          gpsLng,
+          address: address.trim() || undefined,
+        });
+        onSaved(id);
+      }
+    } catch (error) {
+      console.error("Failed to save OLT:", error);
+      setErrors({ submit: "Failed to save. Please try again." });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-        <div className="flex items-center justify-between px-4 py-3 border-b">
-          <h3 className="font-semibold text-gray-800">Add OLT</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-4 py-3 border-b sticky top-0 bg-white">
+          <h3 className="font-semibold text-gray-800">
+            {editingOLT ? "Edit OLT" : "Add OLT"}
+          </h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600" disabled={saving}>
             <X className="w-5 h-5" />
           </button>
         </div>
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          {errors.submit && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+              {errors.submit}
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               OLT Name *
@@ -977,12 +1189,12 @@ function OLTFormModal({
             <input
               type="text"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => { setName(e.target.value); setErrors(prev => ({ ...prev, name: "" })); }}
               placeholder="e.g., OLT-001"
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
-              required
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 ${errors.name ? "border-red-500 bg-red-50" : ""}`}
               autoFocus
             />
+            {errors.name && <p className="mt-1 text-sm text-red-600">{errors.name}</p>}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1011,19 +1223,54 @@ function OLTFormModal({
               <option value={64}>64 ports</option>
             </select>
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Address / Location
+            </label>
+            <input
+              type="text"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="e.g., Main Office, Building A"
+              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              GPS Location
+            </label>
+            <LocationPicker
+              latitude={gpsLat}
+              longitude={gpsLng}
+              onLocationChange={(lat, lng) => {
+                setGpsLat(lat);
+                setGpsLng(lng);
+              }}
+              showMiniMap={true}
+            />
+          </div>
+          {errors.gps && <p className="text-sm text-red-600">{errors.gps}</p>}
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+              disabled={saving}
+              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700"
+              disabled={saving}
+              className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-50 flex items-center gap-2"
             >
-              Create OLT
+              {saving && (
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              )}
+              {saving ? "Saving..." : (editingOLT ? "Update OLT" : "Create OLT")}
             </button>
           </div>
         </form>
@@ -1035,54 +1282,106 @@ function OLTFormModal({
 function ClosureFormModal({
   projectId,
   oltId,
+  editingClosure,
   onClose,
-  onCreated,
+  onSaved,
 }: {
   projectId: number;
   oltId: number;
+  editingClosure: Enclosure | null;
   onClose: () => void;
-  onCreated: (id: number) => void;
+  onSaved: (id: number) => void;
 }) {
-  const [name, setName] = useState("");
-  const [address, setAddress] = useState("");
+  const [name, setName] = useState(editingClosure?.name || "");
+  const [address, setAddress] = useState(editingClosure?.address || "");
+  const [gpsLat, setGpsLat] = useState<number | undefined>(editingClosure?.gpsLat);
+  const [gpsLng, setGpsLng] = useState<number | undefined>(editingClosure?.gpsLng);
   const [trayCount, setTrayCount] = useState(2);
   const [trayCapacity, setTrayCapacity] = useState(12);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  const isEditing = !!editingClosure;
+
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {};
+    if (!name.trim()) {
+      newErrors.name = "Closure name is required";
+    }
+    if (gpsLat !== undefined && (gpsLat < -90 || gpsLat > 90)) {
+      newErrors.gps = "Latitude must be between -90 and 90";
+    }
+    if (gpsLng !== undefined && (gpsLng < -180 || gpsLng > 180)) {
+      newErrors.gps = "Longitude must be between -180 and 180";
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!validateForm()) return;
 
-    const id = await createEnclosure({
-      projectId,
-      name: name.trim(),
-      type: "splice-closure",
-      parentType: "olt",
-      parentId: oltId,
-      address: address.trim() || undefined,
-    });
+    setSaving(true);
+    try {
+      if (isEditing) {
+        // Update existing closure
+        await updateEnclosure(editingClosure.id!, {
+          name: name.trim(),
+          address: address.trim() || undefined,
+          gpsLat,
+          gpsLng,
+        });
+        onSaved(editingClosure.id!);
+      } else {
+        // Create new closure
+        const id = await createEnclosure({
+          projectId,
+          name: name.trim(),
+          type: "splice-closure",
+          parentType: "olt",
+          parentId: oltId,
+          address: address.trim() || undefined,
+          gpsLat,
+          gpsLng,
+        });
 
-    // Auto-create trays
-    for (let i = 1; i <= trayCount; i++) {
-      await createTray({
-        enclosureId: id,
-        number: i,
-        capacity: trayCapacity,
-      });
+        // Auto-create trays
+        for (let i = 1; i <= trayCount; i++) {
+          await createTray({
+            enclosureId: id,
+            number: i,
+            capacity: trayCapacity,
+          });
+        }
+
+        onSaved(id);
+      }
+    } catch (error) {
+      console.error("Failed to save closure:", error);
+      setErrors({ submit: "Failed to save. Please try again." });
+    } finally {
+      setSaving(false);
     }
-
-    onCreated(id);
   };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-        <div className="flex items-center justify-between px-4 py-3 border-b">
-          <h3 className="font-semibold text-gray-800">Add Closure</h3>
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-4 py-3 border-b sticky top-0 bg-white">
+          <h3 className="font-semibold text-gray-800">
+            {isEditing ? "Edit Closure" : "Add Closure"}
+          </h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X className="w-5 h-5" />
           </button>
         </div>
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          {errors.submit && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+              {errors.submit}
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Closure Name *
@@ -1090,12 +1389,12 @@ function ClosureFormModal({
             <input
               type="text"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => { setName(e.target.value); setErrors(prev => ({ ...prev, name: "" })); }}
               placeholder="e.g., CLO-001"
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-              required
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 ${errors.name ? "border-red-500 bg-red-50" : ""}`}
               autoFocus
             />
+            {errors.name && <p className="mt-1 text-sm text-red-600">{errors.name}</p>}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1109,49 +1408,77 @@ function ClosureFormModal({
               className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Splice Trays
-              </label>
-              <select
-                value={trayCount}
-                onChange={(e) => setTrayCount(Number(e.target.value))}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-              >
-                <option value={1}>1 tray</option>
-                <option value={2}>2 trays</option>
-                <option value={4}>4 trays</option>
-                <option value={6}>6 trays</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Tray Capacity
-              </label>
-              <select
-                value={trayCapacity}
-                onChange={(e) => setTrayCapacity(Number(e.target.value))}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
-              >
-                <option value={12}>12 splices</option>
-                <option value={24}>24 splices</option>
-              </select>
-            </div>
+
+          {/* GPS Location */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              GPS Location
+            </label>
+            <LocationPicker
+              latitude={gpsLat}
+              longitude={gpsLng}
+              onLocationChange={(lat, lng) => {
+                setGpsLat(lat);
+                setGpsLng(lng);
+                setErrors(prev => ({ ...prev, gps: "" }));
+              }}
+            />
+            {errors.gps && <p className="mt-1 text-sm text-red-600">{errors.gps}</p>}
           </div>
+
+          {!isEditing && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Splice Trays
+                </label>
+                <select
+                  value={trayCount}
+                  onChange={(e) => setTrayCount(Number(e.target.value))}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                >
+                  <option value={1}>1 tray</option>
+                  <option value={2}>2 trays</option>
+                  <option value={4}>4 trays</option>
+                  <option value={6}>6 trays</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Tray Capacity
+                </label>
+                <select
+                  value={trayCapacity}
+                  onChange={(e) => setTrayCapacity(Number(e.target.value))}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                >
+                  <option value={12}>12 splices</option>
+                  <option value={24}>24 splices</option>
+                </select>
+              </div>
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+              disabled={saving}
+              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+              disabled={saving}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2"
             >
-              Create Closure
+              {saving && (
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              )}
+              {saving ? "Saving..." : (isEditing ? "Update Closure" : "Create Closure")}
             </button>
           </div>
         </form>
@@ -1163,42 +1490,94 @@ function ClosureFormModal({
 function LCPFormModal({
   projectId,
   closureId,
+  editingLCP,
   onClose,
-  onCreated,
+  onSaved,
 }: {
   projectId: number;
   closureId: number;
+  editingLCP: Enclosure | null;
   onClose: () => void;
-  onCreated: (id: number) => void;
+  onSaved: (id: number) => void;
 }) {
-  const [name, setName] = useState("");
-  const [address, setAddress] = useState("");
+  const [name, setName] = useState(editingLCP?.name || "");
+  const [address, setAddress] = useState(editingLCP?.address || "");
+  const [gpsLat, setGpsLat] = useState<number | undefined>(editingLCP?.gpsLat);
+  const [gpsLng, setGpsLng] = useState<number | undefined>(editingLCP?.gpsLng);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  const isEditing = !!editingLCP;
+
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {};
+    if (!name.trim()) {
+      newErrors.name = "LCP name is required";
+    }
+    if (gpsLat !== undefined && (gpsLat < -90 || gpsLat > 90)) {
+      newErrors.gps = "Latitude must be between -90 and 90";
+    }
+    if (gpsLng !== undefined && (gpsLng < -180 || gpsLng > 180)) {
+      newErrors.gps = "Longitude must be between -180 and 180";
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!validateForm()) return;
 
-    const id = await createEnclosure({
-      projectId,
-      name: name.trim(),
-      type: "lcp",
-      parentType: "closure",
-      parentId: closureId,
-      address: address.trim() || undefined,
-    });
-    onCreated(id);
+    setSaving(true);
+    try {
+      if (isEditing) {
+        // Update existing LCP
+        await updateEnclosure(editingLCP.id!, {
+          name: name.trim(),
+          address: address.trim() || undefined,
+          gpsLat,
+          gpsLng,
+        });
+        onSaved(editingLCP.id!);
+      } else {
+        // Create new LCP
+        const id = await createEnclosure({
+          projectId,
+          name: name.trim(),
+          type: "lcp",
+          parentType: "closure",
+          parentId: closureId,
+          address: address.trim() || undefined,
+          gpsLat,
+          gpsLng,
+        });
+        onSaved(id);
+      }
+    } catch (error) {
+      console.error("Failed to save LCP:", error);
+      setErrors({ submit: "Failed to save. Please try again." });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-        <div className="flex items-center justify-between px-4 py-3 border-b">
-          <h3 className="font-semibold text-gray-800">Add LCP</h3>
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-4 py-3 border-b sticky top-0 bg-white">
+          <h3 className="font-semibold text-gray-800">
+            {isEditing ? "Edit LCP" : "Add LCP"}
+          </h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X className="w-5 h-5" />
           </button>
         </div>
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          {errors.submit && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+              {errors.submit}
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               LCP Name *
@@ -1206,12 +1585,12 @@ function LCPFormModal({
             <input
               type="text"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => { setName(e.target.value); setErrors(prev => ({ ...prev, name: "" })); }}
               placeholder="e.g., LCP-001"
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-              required
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 ${errors.name ? "border-red-500 bg-red-50" : ""}`}
               autoFocus
             />
+            {errors.name && <p className="mt-1 text-sm text-red-600">{errors.name}</p>}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1225,19 +1604,45 @@ function LCPFormModal({
               className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
             />
           </div>
+
+          {/* GPS Location */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              GPS Location
+            </label>
+            <LocationPicker
+              latitude={gpsLat}
+              longitude={gpsLng}
+              onLocationChange={(lat, lng) => {
+                setGpsLat(lat);
+                setGpsLng(lng);
+                setErrors(prev => ({ ...prev, gps: "" }));
+              }}
+            />
+            {errors.gps && <p className="mt-1 text-sm text-red-600">{errors.gps}</p>}
+          </div>
+
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+              disabled={saving}
+              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+              disabled={saving}
+              className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center gap-2"
             >
-              Create LCP
+              {saving && (
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              )}
+              {saving ? "Saving..." : (isEditing ? "Update LCP" : "Create LCP")}
             </button>
           </div>
         </form>
@@ -1249,55 +1654,107 @@ function LCPFormModal({
 function NAPFormModal({
   projectId,
   lcpId,
+  editingNAP,
   onClose,
-  onCreated,
+  onSaved,
 }: {
   projectId: number;
   lcpId: number;
+  editingNAP: Enclosure | null;
   onClose: () => void;
-  onCreated: (id: number) => void;
+  onSaved: (id: number) => void;
 }) {
-  const [name, setName] = useState("");
-  const [address, setAddress] = useState("");
+  const [name, setName] = useState(editingNAP?.name || "");
+  const [address, setAddress] = useState(editingNAP?.address || "");
+  const [gpsLat, setGpsLat] = useState<number | undefined>(editingNAP?.gpsLat);
+  const [gpsLng, setGpsLng] = useState<number | undefined>(editingNAP?.gpsLng);
   const [portCount, setPortCount] = useState(8);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+
+  const isEditing = !!editingNAP;
+
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {};
+    if (!name.trim()) {
+      newErrors.name = "NAP name is required";
+    }
+    if (gpsLat !== undefined && (gpsLat < -90 || gpsLat > 90)) {
+      newErrors.gps = "Latitude must be between -90 and 90";
+    }
+    if (gpsLng !== undefined && (gpsLng < -180 || gpsLng > 180)) {
+      newErrors.gps = "Longitude must be between -180 and 180";
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!validateForm()) return;
 
-    const id = await createEnclosure({
-      projectId,
-      name: name.trim(),
-      type: "nap",
-      parentType: "lcp",
-      parentId: lcpId,
-      address: address.trim() || undefined,
-    });
+    setSaving(true);
+    try {
+      if (isEditing) {
+        // Update existing NAP
+        await updateEnclosure(editingNAP.id!, {
+          name: name.trim(),
+          address: address.trim() || undefined,
+          gpsLat,
+          gpsLng,
+        });
+        onSaved(editingNAP.id!);
+      } else {
+        // Create new NAP
+        const id = await createEnclosure({
+          projectId,
+          name: name.trim(),
+          type: "nap",
+          parentType: "lcp",
+          parentId: lcpId,
+          address: address.trim() || undefined,
+          gpsLat,
+          gpsLng,
+        });
 
-    // Auto-create ports
-    for (let i = 1; i <= portCount; i++) {
-      await createPort({
-        enclosureId: id,
-        portNumber: i,
-        type: "output",
-        status: "available",
-        connectorType: "SC",
-      });
+        // Auto-create ports
+        for (let i = 1; i <= portCount; i++) {
+          await createPort({
+            enclosureId: id,
+            portNumber: i,
+            type: "output",
+            status: "available",
+            connectorType: "SC",
+          });
+        }
+
+        onSaved(id);
+      }
+    } catch (error) {
+      console.error("Failed to save NAP:", error);
+      setErrors({ submit: "Failed to save. Please try again." });
+    } finally {
+      setSaving(false);
     }
-
-    onCreated(id);
   };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-        <div className="flex items-center justify-between px-4 py-3 border-b">
-          <h3 className="font-semibold text-gray-800">Add NAP</h3>
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-4 py-3 border-b sticky top-0 bg-white">
+          <h3 className="font-semibold text-gray-800">
+            {isEditing ? "Edit NAP" : "Add NAP"}
+          </h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X className="w-5 h-5" />
           </button>
         </div>
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          {errors.submit && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
+              {errors.submit}
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               NAP Name *
@@ -1305,12 +1762,12 @@ function NAPFormModal({
             <input
               type="text"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => { setName(e.target.value); setErrors(prev => ({ ...prev, name: "" })); }}
               placeholder="e.g., NAP-001"
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
-              required
+              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 ${errors.name ? "border-red-500 bg-red-50" : ""}`}
               autoFocus
             />
+            {errors.name && <p className="mt-1 text-sm text-red-600">{errors.name}</p>}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1324,34 +1781,62 @@ function NAPFormModal({
               className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
             />
           </div>
+
+          {/* GPS Location */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Number of Ports
+              GPS Location
             </label>
-            <select
-              value={portCount}
-              onChange={(e) => setPortCount(Number(e.target.value))}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
-            >
-              <option value={4}>4 ports</option>
-              <option value={8}>8 ports</option>
-              <option value={12}>12 ports</option>
-              <option value={16}>16 ports</option>
-            </select>
+            <LocationPicker
+              latitude={gpsLat}
+              longitude={gpsLng}
+              onLocationChange={(lat, lng) => {
+                setGpsLat(lat);
+                setGpsLng(lng);
+                setErrors(prev => ({ ...prev, gps: "" }));
+              }}
+            />
+            {errors.gps && <p className="mt-1 text-sm text-red-600">{errors.gps}</p>}
           </div>
+
+          {!isEditing && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Number of Ports
+              </label>
+              <select
+                value={portCount}
+                onChange={(e) => setPortCount(Number(e.target.value))}
+                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+              >
+                <option value={4}>4 ports</option>
+                <option value={8}>8 ports</option>
+                <option value={12}>12 ports</option>
+                <option value={16}>16 ports</option>
+              </select>
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+              disabled={saving}
+              className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700"
+              disabled={saving}
+              className="px-4 py-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700 disabled:opacity-50 flex items-center gap-2"
             >
-              Create NAP
+              {saving && (
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              )}
+              {saving ? "Saving..." : (isEditing ? "Update NAP" : "Create NAP")}
             </button>
           </div>
         </form>

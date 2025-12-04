@@ -52,11 +52,17 @@ export default function PortGrid({
     );
   }
 
+  // Responsive grid: 2 columns on mobile, then user-specified columns on larger screens
+  const gridClasses = columns === 4
+    ? "grid-cols-2 sm:grid-cols-4"
+    : columns === 3
+    ? "grid-cols-2 sm:grid-cols-3"
+    : columns === 2
+    ? "grid-cols-2"
+    : `grid-cols-2 sm:grid-cols-${Math.min(columns, 6)}`;
+
   return (
-    <div
-      className="grid gap-2"
-      style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
-    >
+    <div className={`grid gap-2 ${gridClasses}`}>
       {ports.map((port) => {
         const config = STATUS_CONFIG[port.status];
         return (
@@ -117,18 +123,22 @@ export function PortGridCompact({
   onPortClick?: (port: Port) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-1">
+    <div className="flex flex-wrap gap-1.5">
       {ports.map((port) => {
         const config = STATUS_CONFIG[port.status];
         return (
           <button
             key={port.id}
             onClick={() => onPortClick?.(port)}
-            className={`w-8 h-8 rounded flex items-center justify-center border ${config.bg} ${
+            // Updated to meet 44px minimum touch target for mobile accessibility
+            className={`min-w-[44px] min-h-[44px] w-11 h-11 rounded-lg flex items-center justify-center border-2 ${config.bg} ${
               onPortClick ? "cursor-pointer" : "cursor-default"
-            }`}
+            } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1`}
             title={`${port.label || `P${port.portNumber}`} - ${config.label}${
               port.customerName ? ` (${port.customerName})` : ""
+            }`}
+            aria-label={`Port ${port.label || port.portNumber} - ${config.label}${
+              port.customerName ? ` - ${port.customerName}` : ""
             }`}
           >
             <span className={config.color}>{config.icon}</span>
