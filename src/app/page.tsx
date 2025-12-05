@@ -47,8 +47,9 @@ const ProjectWizard = dynamic(() => import("@/components/ProjectWizard"), {
 const UnifiedHierarchyBrowser = dynamic(() => import("@/components/hierarchy/UnifiedHierarchyBrowser"), {
   loading: () => <CardSkeleton />,
 });
-const NetworkTopologyTree = dynamic(() => import("@/components/topology/NetworkTopologyTree"), {
+const TopologyCanvas = dynamic(() => import("@/components/topology/TopologyCanvas"), {
   loading: () => <CardSkeleton />,
+  ssr: false, // React Flow requires client-side rendering
 });
 
 // Navigation structure - Simplified: merged splice/distribution/hierarchy into "network"
@@ -354,9 +355,9 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Network - Topology Tree View */}
+        {/* Network - Topology Canvas View */}
         {activeTab === "topology" && selectedProjectId && (
-          <NetworkTopologyTree projectId={selectedProjectId} />
+          <TopologyCanvas projectId={selectedProjectId} />
         )}
         {activeTab === "topology" && !selectedProjectId && (
           <div className="text-center py-12 bg-white rounded-2xl shadow-lg">
