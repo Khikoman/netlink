@@ -35,6 +35,7 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
+  Palette,
 } from "lucide-react";
 import { db, updateNodePosition, type NodeType } from "@/lib/db";
 import {
@@ -46,6 +47,7 @@ import { useNetwork } from "@/contexts/NetworkContext";
 import { expandableNodeTypes } from "./nodes/ExpandableNodes";
 import { fiberEdgeTypes } from "./edges/FiberEdge";
 import { getLayoutedElements } from "@/lib/topology/layoutUtils";
+import { FloatingPalette } from "./FloatingPalette";
 import type { OLT, ODF, Enclosure } from "@/types";
 
 // Combine edge types
@@ -314,7 +316,9 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
   const [newNodeName, setNewNodeName] = useState("");
   const [newNodeType, setNewNodeType] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<{ nodeId: string; childCount: number } | null>(null);
+  const [showPalette, setShowPalette] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
+  const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
   // Fetch data
   const olts = useOLTs(projectId);
@@ -369,6 +373,126 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
           console.error("Failed to persist node position:", err);
         }
       }
+    },
+    []
+  );
+
+  // Handle drag over for palette items
+  const onDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  }, []);
+
+  // Handle drop from palette to create new nodes
+  const onDrop = useCallback(
+    async (event: React.DragEvent) => {
+      event.preventDefault();
+
+      if (!projectId || !reactFlowWrapper.current) return;
+
+      const type = event.dataTransfer.getData("application/reactflow");
+      if (!type) return;
+
+      // Get drop position in flow coordinates
+      const bounds = reactFlowWrapper.current.getBoundingClientRect();
+      const position = reactFlowInstance.screenToFlowPosition({
+        x: event.clientX - bounds.left,
+        y: event.clientY - bounds.top,
+      });
+
+      try {
+        // Create node based on type
+        if (type === "olt") {
+          // OLT is a root node - create directly
+          await db.olts.add({
+            projectId,
+            name: `OLT-${Date.now().toString(36).toUpperCase()}`,
+            totalPonPorts: 16,
+            createdAt: new Date(),
+            canvasX: position.x,
+            canvasY: position.y,
+          });
+        } else if (type === "odf") {
+          // ODF needs an OLT parent - find closest or first OLT
+          const closestOlt = olts?.[0];
+          if (!closestOlt) {
+            alert("Please create an OLT first before adding ODFs");
+            return;
+          }
+          await db.odfs.add({
+            projectId,
+            oltId: closestOlt.id!,
+            name: `ODF-${Date.now().toString(36).toUpperCase()}`,
+            portCount: 48,
+            createdAt: new Date(),
+            canvasX: position.x,
+            canvasY: position.y,
+          });
+        } else if (type === "closure") {
+          // Closure can be parented to OLT, ODF, or another Closure
+          // Default to first OLT if exists
+          const parentOlt = olts?.[0];
+          if (!parentOlt) {
+            alert("Please create an OLT first before adding Closures");
+            return;
+          }
+          await db.enclosures.add({
+            projectId,
+            name: `CL-${Date.now().toString(36).toUpperCase()}`,
+            type: "splice-closure",
+            parentType: "olt",
+            parentId: parentOlt.id!,
+            createdAt: new Date(),
+            canvasX: position.x,
+            canvasY: position.y,
+          });
+        } else if (type === "lcp") {
+          // LCP needs an OLT or Closure parent
+          const parentOlt = olts?.[0];
+          if (!parentOlt) {
+            alert("Please create an OLT first before adding LCPs");
+            return;
+          }
+          await db.enclosures.add({
+            projectId,
+            name: `LCP-${Date.now().toString(36).toUpperCase()}`,
+            type: "lcp",
+            parentType: "olt",
+            parentId: parentOlt.id!,
+            createdAt: new Date(),
+            canvasX: position.x,
+            canvasY: position.y,
+          });
+        } else if (type === "nap") {
+          // NAP needs an LCP parent
+          const lcpEnclosure = enclosures?.find((e) => e.type === "lcp" || e.type === "fdt");
+          if (!lcpEnclosure) {
+            alert("Please create an LCP first before adding NAPs");
+            return;
+          }
+          await db.enclosures.add({
+            projectId,
+            name: `NAP-${Date.now().toString(36).toUpperCase()}`,
+            type: "nap",
+            parentType: "lcp",
+            parentId: lcpEnclosure.id!,
+            createdAt: new Date(),
+            canvasX: position.x,
+            canvasY: position.y,
+          });
+        }
+      } catch (err) {
+        console.error("Failed to create node from drop:", err);
+        alert("Failed to create node");
+      }
+    },
+    [projectId, reactFlowInstance, olts, enclosures]
+  );
+
+  // Handle drag start from palette (no-op, just for the callback)
+  const onPaletteDragStart = useCallback(
+    (_event: React.DragEvent, _nodeType: string) => {
+      // The actual data transfer is set in FloatingPalette
     },
     []
   );
@@ -645,23 +769,33 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
   };
 
   return (
-    <div ref={containerRef} className="w-full h-full min-h-[500px] bg-gray-50 overflow-hidden">
-      <ReactFlow
-        nodes={filteredNodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        onNodeContextMenu={onNodeContextMenu}
-        onNodeDragStop={onNodeDragStop}
-        nodeTypes={expandableNodeTypes}
-        edgeTypes={edgeTypes}
-        fitView
-        minZoom={0.1}
-        maxZoom={2}
-        defaultViewport={{ x: 0, y: 0, zoom: 0.8 }}
-        proOptions={{ hideAttribution: true }}
-      >
+    <div ref={containerRef} className="w-full h-full min-h-[500px] bg-gray-50 overflow-hidden relative">
+      {/* Floating Palette for drag-and-drop node creation */}
+      <FloatingPalette
+        onDragStart={onPaletteDragStart}
+        onClose={() => setShowPalette(false)}
+        isOpen={showPalette}
+      />
+
+      <div ref={reactFlowWrapper} className="w-full h-full">
+        <ReactFlow
+          nodes={filteredNodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          onNodeContextMenu={onNodeContextMenu}
+          onNodeDragStop={onNodeDragStop}
+          onDragOver={onDragOver}
+          onDrop={onDrop}
+          nodeTypes={expandableNodeTypes}
+          edgeTypes={edgeTypes}
+          fitView
+          minZoom={0.1}
+          maxZoom={2}
+          defaultViewport={{ x: 0, y: 0, zoom: 0.8 }}
+          proOptions={{ hideAttribution: true }}
+        >
         {/* Toolbar Panel */}
         <Panel position="top-left" className="flex gap-2">
           <div className="bg-white rounded-lg shadow-lg border p-2 flex items-center gap-2">
@@ -706,6 +840,17 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
               title="Toggle Minimap"
             >
               <MapPin className="w-4 h-4" />
+            </button>
+
+            {/* Toggle Palette */}
+            <button
+              onClick={() => setShowPalette(!showPalette)}
+              className={`p-2 rounded-md transition-colors ${
+                showPalette ? "bg-purple-100 text-purple-600" : "hover:bg-gray-100 text-gray-600"
+              }`}
+              title="Toggle Component Palette"
+            >
+              <Palette className="w-4 h-4" />
             </button>
           </div>
         </Panel>
@@ -755,6 +900,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
 
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#e2e8f0" />
       </ReactFlow>
+      </div>
 
       {/* Context Menu */}
       {contextMenu && (

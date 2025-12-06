@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useState, useCallback, useEffect } from "react";
-import { Handle, Position, NodeProps } from "reactflow";
+import { Handle, Position, NodeProps, NodeToolbar } from "reactflow";
 import {
   Server,
   Box,
@@ -16,11 +16,25 @@ import {
   User,
   Phone,
   Signal,
+  Plus,
+  Edit3,
+  Trash2,
+  Copy,
 } from "lucide-react";
 import { db, toggleEnclosureExpanded } from "@/lib/db";
 import { useLiveQuery } from "dexie-react-hooks";
 import { FIBER_COLORS } from "@/lib/fiberColors";
 import type { NodeType } from "@/lib/db";
+
+// Handle styles for interactive connection ports
+const handleBaseStyle = "!w-3 !h-3 !border-2 !border-white transition-all duration-200";
+const handleColors: Record<string, string> = {
+  olt: "!bg-teal-500 hover:!bg-teal-400 hover:!scale-150 hover:!shadow-lg hover:!shadow-teal-500/50",
+  odf: "!bg-cyan-500 hover:!bg-cyan-400 hover:!scale-150 hover:!shadow-lg hover:!shadow-cyan-500/50",
+  closure: "!bg-purple-500 hover:!bg-purple-400 hover:!scale-150 hover:!shadow-lg hover:!shadow-purple-500/50",
+  lcp: "!bg-orange-500 hover:!bg-orange-400 hover:!scale-150 hover:!shadow-lg hover:!shadow-orange-500/50",
+  nap: "!bg-blue-500 hover:!bg-blue-400 hover:!scale-150 hover:!shadow-lg hover:!shadow-blue-500/50",
+};
 
 interface BaseNodeData {
   label: string;
@@ -125,11 +139,50 @@ function ExpandableClosureNodeComponent({ data, selected }: NodeProps<BaseNodeDa
         ${isExpanded ? "min-w-[280px]" : "min-w-[160px]"}
       `}
     >
-      {/* Top handle */}
+      {/* Quick Actions Toolbar - appears on selection */}
+      <NodeToolbar
+        isVisible={selected}
+        position={Position.Top}
+        offset={8}
+        className="flex items-center gap-1 p-1 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border border-gray-200"
+      >
+        <button
+          className="p-1.5 rounded-md bg-green-500 hover:bg-green-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
+          title="Add Child"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Plus className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Add</span>
+        </button>
+        <button
+          className="p-1.5 rounded-md bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
+          title="Edit Splices"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Link2 className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Splices</span>
+        </button>
+        <button
+          className="p-1.5 rounded-md bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
+          title="Set GPS Location"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <MapPin className="w-3.5 h-3.5" />
+        </button>
+        <button
+          className="p-1.5 rounded-md bg-red-500 hover:bg-red-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
+          title="Delete"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </NodeToolbar>
+
+      {/* Top handle - for incoming connections */}
       <Handle
         type="target"
         position={Position.Top}
-        className="w-3 h-3 !bg-gray-400 border-2 border-white"
+        className={`${handleBaseStyle} ${handleColors[data.type] || handleColors.closure}`}
       />
 
       {/* Header - always visible */}
@@ -195,11 +248,11 @@ function ExpandableClosureNodeComponent({ data, selected }: NodeProps<BaseNodeDa
         </div>
       )}
 
-      {/* Bottom handle */}
+      {/* Bottom handle - for outgoing connections */}
       <Handle
         type="source"
         position={Position.Bottom}
-        className="w-3 h-3 !bg-gray-400 border-2 border-white"
+        className={`${handleBaseStyle} ${handleColors[data.type] || handleColors.closure}`}
       />
     </div>
   );
@@ -297,11 +350,50 @@ function ExpandableNAPNodeComponent({ data, selected }: NodeProps<BaseNodeData>)
         ${isExpanded ? "min-w-[260px]" : "min-w-[160px]"}
       `}
     >
-      {/* Top handle */}
+      {/* Quick Actions Toolbar - appears on selection */}
+      <NodeToolbar
+        isVisible={selected}
+        position={Position.Top}
+        offset={8}
+        className="flex items-center gap-1 p-1 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border border-gray-200"
+      >
+        <button
+          className="p-1.5 rounded-md bg-green-500 hover:bg-green-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
+          title="Add Customer"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Plus className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Customer</span>
+        </button>
+        <button
+          className="p-1.5 rounded-md bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
+          title="Edit Ports"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Edit3 className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Ports</span>
+        </button>
+        <button
+          className="p-1.5 rounded-md bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
+          title="Set GPS Location"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <MapPin className="w-3.5 h-3.5" />
+        </button>
+        <button
+          className="p-1.5 rounded-md bg-red-500 hover:bg-red-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
+          title="Delete"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </NodeToolbar>
+
+      {/* Top handle - for incoming connections */}
       <Handle
         type="target"
         position={Position.Top}
-        className="w-3 h-3 !bg-gray-400 border-2 border-white"
+        className={`${handleBaseStyle} ${handleColors[data.type] || handleColors.nap}`}
       />
 
       {/* Header */}
@@ -424,6 +516,10 @@ function BasicNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
   const showTopHandle = data.type !== "olt";
   const showBottomHandle = data.type !== "nap";
 
+  // Determine which child types this node can have
+  const canHaveChildren = ["olt", "odf", "closure", "lcp"].includes(data.type);
+  const canDelete = data.type !== "olt";
+
   return (
     <div
       className={`
@@ -433,11 +529,61 @@ function BasicNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
         ${selected ? "ring-2 ring-blue-500 ring-offset-2 shadow-lg" : ""}
       `}
     >
+      {/* Quick Actions Toolbar - appears on selection */}
+      <NodeToolbar
+        isVisible={selected}
+        position={Position.Top}
+        offset={8}
+        className="flex items-center gap-1 p-1 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border border-gray-200"
+      >
+        {canHaveChildren && (
+          <button
+            className="p-1.5 rounded-md bg-green-500 hover:bg-green-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
+            title="Add Child"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Add</span>
+          </button>
+        )}
+        <button
+          className="p-1.5 rounded-md bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
+          title="Edit"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Edit3 className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Edit</span>
+        </button>
+        <button
+          className="p-1.5 rounded-md bg-gray-500 hover:bg-gray-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
+          title="Duplicate"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Copy className="w-3.5 h-3.5" />
+        </button>
+        <button
+          className="p-1.5 rounded-md bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
+          title="Set GPS Location"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <MapPin className="w-3.5 h-3.5" />
+        </button>
+        {canDelete && (
+          <button
+            className="p-1.5 rounded-md bg-red-500 hover:bg-red-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
+            title="Delete"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </NodeToolbar>
+
       {showTopHandle && (
         <Handle
           type="target"
           position={Position.Top}
-          className="w-3 h-3 !bg-gray-400 border-2 border-white"
+          className={`${handleBaseStyle} ${handleColors[data.type] || handleColors.closure}`}
         />
       )}
 
@@ -482,7 +628,7 @@ function BasicNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
         <Handle
           type="source"
           position={Position.Bottom}
-          className="w-3 h-3 !bg-gray-400 border-2 border-white"
+          className={`${handleBaseStyle} ${handleColors[data.type] || handleColors.closure}`}
         />
       )}
     </div>
@@ -543,7 +689,7 @@ function CustomerNodeComponent({ data, selected }: NodeProps<CustomerNodeData>) 
       <Handle
         type="target"
         position={Position.Top}
-        className="w-2 h-2 !bg-gray-400 border border-white"
+        className="!w-2.5 !h-2.5 !bg-green-500 !border-2 !border-white transition-all duration-200 hover:!scale-150 hover:!shadow-lg hover:!shadow-green-500/50"
       />
 
       <div className="flex items-center gap-2">
