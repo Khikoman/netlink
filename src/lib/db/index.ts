@@ -146,6 +146,30 @@ class NetLinkDB extends Dexie {
       odfs: "++id, projectId, oltId, name",
       odfPorts: "++id, odfId, portNumber, status, ponPortId, closureId",
     });
+
+    // Version 6: Add canvas position fields for topology view (canvasX, canvasY)
+    // and expanded state for inline editing on canvas
+    this.version(6).stores({
+      projects: "++id, name, status, createdAt",
+      enclosures: "++id, projectId, name, type, parentType, parentId, hierarchyLevel, odfPortId",
+      trays: "++id, enclosureId, number",
+      cables: "++id, projectId, name, fiberCount, role",
+      splices: "++id, trayId, cableAId, cableBId, fiberA, fiberB, status, timestamp",
+      otdrTraces: "++id, spliceId, wavelength, uploadedAt",
+      inventory: "++id, category, name, partNumber",
+      inventoryUsage: "++id, inventoryId, projectId, date",
+      lossBudgets: "++id, [input.name], createdAt",
+      mapNodes: "++id, projectId, type, enclosureId",
+      mapRoutes: "++id, projectId, fromNodeId, toNodeId, cableId",
+      syncQueue: "++id, table, recordId, synced, timestamp",
+      splitters: "++id, enclosureId, name, type",
+      ports: "++id, enclosureId, splitterId, portNumber, status",
+      olts: "++id, projectId, name",
+      oltPonPorts: "++id, oltId, portNumber, status",
+      customerAttachments: "++id, portId, projectId, attachmentType, uploadedAt",
+      odfs: "++id, projectId, oltId, name",
+      odfPorts: "++id, odfId, portNumber, status, ponPortId, closureId",
+    });
   }
 }
 
@@ -1001,6 +1025,54 @@ export async function getNAPStats(napId: number) {
     reserved: ports.filter((p) => p.status === "reserved").length,
     faulty: ports.filter((p) => p.status === "faulty").length,
   };
+}
+
+// ============================================
+// CANVAS POSITION OPERATIONS (for topology view)
+// ============================================
+
+export type NodeType = "olt" | "odf" | "enclosure";
+
+/**
+ * Update canvas position for any node type (OLT, ODF, Enclosure)
+ */
+export async function updateNodePosition(
+  nodeType: NodeType,
+  id: number,
+  x: number,
+  y: number
+): Promise<void> {
+  switch (nodeType) {
+    case "olt":
+      await db.olts.update(id, { canvasX: x, canvasY: y });
+      break;
+    case "odf":
+      await db.odfs.update(id, { canvasX: x, canvasY: y });
+      break;
+    case "enclosure":
+      await db.enclosures.update(id, { canvasX: x, canvasY: y });
+      break;
+  }
+}
+
+/**
+ * Batch update positions for multiple nodes (used when dragging groups)
+ */
+export async function updateNodePositions(
+  updates: Array<{ nodeType: NodeType; id: number; x: number; y: number }>
+): Promise<void> {
+  await db.transaction("rw", [db.olts, db.odfs, db.enclosures], async () => {
+    for (const update of updates) {
+      await updateNodePosition(update.nodeType, update.id, update.x, update.y);
+    }
+  });
+}
+
+/**
+ * Toggle expanded state for enclosures on the canvas
+ */
+export async function toggleEnclosureExpanded(id: number, expanded: boolean): Promise<void> {
+  await db.enclosures.update(id, { expanded });
 }
 
 // ============================================

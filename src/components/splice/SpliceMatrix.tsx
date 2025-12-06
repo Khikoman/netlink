@@ -13,20 +13,18 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { getTechnicianName, setTechnicianName, getDefaultSpliceType, getDefaultCableCount } from "@/lib/preferences";
 import { HelpTip } from "@/components/ui/HelpTooltip";
 import { AlertCircle, ChevronDown, Layers, FolderOpen, Box } from "lucide-react";
+import { useNetwork } from "@/contexts/NetworkContext";
 import type { Splice, SpliceType, Project, Enclosure, Tray } from "@/types";
 
 export default function SpliceMatrix() {
-  // ============ PROJECT/ENCLOSURE/TRAY SELECTORS ============
-  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  // ============ GET PROJECT FROM CONTEXT ============
+  const { projectId, projects, project: selectedProject, enclosures, selectProject } = useNetwork();
+
+  // ============ LOCAL ENCLOSURE/TRAY SELECTORS ============
   const [selectedEnclosureId, setSelectedEnclosureId] = useState<number | null>(null);
   const [selectedTrayId, setSelectedTrayId] = useState<number | null>(null);
 
-  // Get data from database with cascading filters
-  const projects = useLiveQuery(() => db.projects.orderBy("createdAt").reverse().toArray(), []);
-  const enclosures = useLiveQuery(
-    () => selectedProjectId ? db.enclosures.where("projectId").equals(selectedProjectId).toArray() : [],
-    [selectedProjectId]
-  );
+  // Get trays for selected enclosure
   const trays = useLiveQuery(
     () => selectedEnclosureId ? db.trays.where("enclosureId").equals(selectedEnclosureId).toArray() : [],
     [selectedEnclosureId]
@@ -37,7 +35,6 @@ export default function SpliceMatrix() {
   );
 
   // Get selected entities for display
-  const selectedProject = projects?.find(p => p.id === selectedProjectId);
   const selectedEnclosure = enclosures?.find(e => e.id === selectedEnclosureId);
   const selectedTray = trays?.find(t => t.id === selectedTrayId);
 
@@ -78,7 +75,7 @@ export default function SpliceMatrix() {
   useEffect(() => {
     setSelectedEnclosureId(null);
     setSelectedTrayId(null);
-  }, [selectedProjectId]);
+  }, [projectId]);
 
   useEffect(() => {
     setSelectedTrayId(null);
@@ -196,7 +193,7 @@ export default function SpliceMatrix() {
   const spliceCount = splices?.length || 0;
 
   // Check if setup is complete
-  const setupComplete = selectedProjectId && selectedEnclosureId && selectedTrayId;
+  const setupComplete = projectId && selectedEnclosureId && selectedTrayId;
 
   return (
     <div className="space-y-6">
@@ -231,8 +228,8 @@ export default function SpliceMatrix() {
               </label>
               <div className="relative">
                 <select
-                  value={selectedProjectId || ""}
-                  onChange={(e) => setSelectedProjectId(e.target.value ? Number(e.target.value) : null)}
+                  value={projectId || ""}
+                  onChange={(e) => selectProject(e.target.value ? Number(e.target.value) : null)}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-white text-gray-800 appearance-none cursor-pointer focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
                   <option value="">Select project...</option>
@@ -260,10 +257,10 @@ export default function SpliceMatrix() {
                 <select
                   value={selectedEnclosureId || ""}
                   onChange={(e) => setSelectedEnclosureId(e.target.value ? Number(e.target.value) : null)}
-                  disabled={!selectedProjectId}
+                  disabled={!projectId}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-white text-gray-800 appearance-none cursor-pointer focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400"
                 >
-                  <option value="">{selectedProjectId ? "Select enclosure..." : "Select project first"}</option>
+                  <option value="">{projectId ? "Select enclosure..." : "Select project first"}</option>
                   {enclosures?.map((enc) => (
                     <option key={enc.id} value={enc.id}>
                       {enc.name} ({enc.type})
@@ -272,7 +269,7 @@ export default function SpliceMatrix() {
                 </select>
                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
               </div>
-              {enclosures?.length === 0 && selectedProjectId && (
+              {enclosures?.length === 0 && projectId && (
                 <p className="mt-1 text-xs text-amber-600">No enclosures in this project</p>
               )}
             </div>

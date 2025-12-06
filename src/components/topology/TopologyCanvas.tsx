@@ -36,18 +36,25 @@ import {
   ZoomOut,
   Maximize2,
 } from "lucide-react";
-import { db } from "@/lib/db";
+import { db, updateNodePosition, type NodeType } from "@/lib/db";
 import {
   useOLTs,
   useODFsByOLT,
   useEnclosures,
 } from "@/lib/db/hooks";
-import { nodeTypes } from "./nodes/CustomNodes";
+import { useNetwork } from "@/contexts/NetworkContext";
+import { expandableNodeTypes } from "./nodes/ExpandableNodes";
+import { fiberEdgeTypes } from "./edges/FiberEdge";
 import { getLayoutedElements } from "@/lib/topology/layoutUtils";
 import type { OLT, ODF, Enclosure } from "@/types";
 
+// Combine edge types
+const edgeTypes = {
+  ...fiberEdgeTypes,
+};
+
 interface TopologyCanvasProps {
-  projectId: number;
+  projectId?: number; // Optional - will use context if not provided
 }
 
 interface ContextMenu {
@@ -67,39 +74,54 @@ interface AddNodeDialog {
 function buildFlowData(
   olts: OLT[],
   odfs: ODF[],
-  enclosures: Enclosure[]
-): { nodes: Node[]; edges: Edge[] } {
+  enclosures: Enclosure[],
+  useAutoLayout: boolean = true
+): { nodes: Node[]; edges: Edge[]; hasPersistedPositions: boolean } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
+  let hasPersistedPositions = false;
 
   // Add OLT nodes
   olts.forEach((olt, idx) => {
+    // Use persisted position if available, otherwise use auto-layout position
+    const hasPosition = olt.canvasX !== undefined && olt.canvasY !== undefined;
+    if (hasPosition) hasPersistedPositions = true;
+
     nodes.push({
       id: `olt-${olt.id}`,
       type: "olt",
-      position: { x: idx * 250, y: 0 },
+      position: hasPosition
+        ? { x: olt.canvasX!, y: olt.canvasY! }
+        : { x: idx * 250, y: 0 },
       data: {
         label: olt.name,
         type: "olt",
         portCount: olt.totalPonPorts,
         hasGps: !!(olt.gpsLat && olt.gpsLng),
         dbId: olt.id,
+        nodeType: "olt" as NodeType,
       },
     });
   });
 
   // Add ODF nodes
   odfs.forEach((odf, idx) => {
+    const hasPosition = odf.canvasX !== undefined && odf.canvasY !== undefined;
+    if (hasPosition) hasPersistedPositions = true;
+
     nodes.push({
       id: `odf-${odf.id}`,
       type: "odf",
-      position: { x: idx * 200, y: 100 },
+      position: hasPosition
+        ? { x: odf.canvasX!, y: odf.canvasY! }
+        : { x: idx * 200, y: 100 },
       data: {
         label: odf.name,
         type: "odf",
         portCount: odf.portCount,
         hasGps: !!(odf.gpsLat && odf.gpsLng),
         dbId: odf.id,
+        nodeType: "odf" as NodeType,
       },
     });
     // Edge from OLT to ODF
@@ -107,9 +129,13 @@ function buildFlowData(
       id: `e-olt-${odf.oltId}-odf-${odf.id}`,
       source: `olt-${odf.oltId}`,
       target: `odf-${odf.id}`,
-      type: "smoothstep",
-      style: { stroke: "#f97316", strokeWidth: 2 },
-      animated: false,
+      type: "fiber",
+      data: {
+        label: "OLT-ODF Link",
+        sourceColor: "#14b8a6", // teal (OLT color)
+        targetColor: "#06b6d4", // cyan (ODF color)
+        cable: { name: "Patch", fiberCount: 1 },
+      },
     });
   });
 
@@ -122,15 +148,22 @@ function buildFlowData(
 
   // Add Closure nodes
   closures.forEach((enc, idx) => {
+    const hasPosition = enc.canvasX !== undefined && enc.canvasY !== undefined;
+    if (hasPosition) hasPersistedPositions = true;
+
     nodes.push({
       id: `closure-${enc.id}`,
       type: "closure",
-      position: { x: idx * 200, y: 200 },
+      position: hasPosition
+        ? { x: enc.canvasX!, y: enc.canvasY! }
+        : { x: idx * 200, y: 200 },
       data: {
         label: enc.name,
         type: "closure",
         hasGps: !!(enc.gpsLat && enc.gpsLng),
         dbId: enc.id,
+        nodeType: "enclosure" as NodeType,
+        expanded: enc.expanded,
       },
     });
 
@@ -140,16 +173,24 @@ function buildFlowData(
         id: `e-odf-${enc.parentId}-closure-${enc.id}`,
         source: `odf-${enc.parentId}`,
         target: `closure-${enc.id}`,
-        type: "smoothstep",
-        style: { stroke: "#a855f7", strokeWidth: 2 },
+        type: "fiber",
+        data: {
+          sourceColor: "#06b6d4", // cyan (ODF)
+          targetColor: "#a855f7", // purple (Closure)
+          cable: { name: "Feeder", fiberCount: 48 },
+        },
       });
     } else if (enc.parentType === "olt" && enc.parentId) {
       edges.push({
         id: `e-olt-${enc.parentId}-closure-${enc.id}`,
         source: `olt-${enc.parentId}`,
         target: `closure-${enc.id}`,
-        type: "smoothstep",
-        style: { stroke: "#a855f7", strokeWidth: 2 },
+        type: "fiber",
+        data: {
+          sourceColor: "#14b8a6", // teal (OLT)
+          targetColor: "#a855f7", // purple (Closure)
+          cable: { name: "Trunk", fiberCount: 96 },
+        },
       });
     } else if (enc.parentType === "closure" && enc.parentId) {
       // Cascading closure
@@ -157,23 +198,35 @@ function buildFlowData(
         id: `e-closure-${enc.parentId}-closure-${enc.id}`,
         source: `closure-${enc.parentId}`,
         target: `closure-${enc.id}`,
-        type: "smoothstep",
-        style: { stroke: "#a855f7", strokeWidth: 2 },
+        type: "fiber",
+        data: {
+          sourceColor: "#a855f7", // purple
+          targetColor: "#a855f7", // purple
+          cable: { name: "Dist", fiberCount: 24 },
+          animated: true, // Animated for cascading
+        },
       });
     }
   });
 
   // Add LCP nodes
   lcps.forEach((enc, idx) => {
+    const hasPosition = enc.canvasX !== undefined && enc.canvasY !== undefined;
+    if (hasPosition) hasPersistedPositions = true;
+
     nodes.push({
       id: `lcp-${enc.id}`,
       type: "lcp",
-      position: { x: idx * 180, y: 300 },
+      position: hasPosition
+        ? { x: enc.canvasX!, y: enc.canvasY! }
+        : { x: idx * 180, y: 300 },
       data: {
         label: enc.name,
         type: "lcp",
         hasGps: !!(enc.gpsLat && enc.gpsLng),
         dbId: enc.id,
+        nodeType: "enclosure" as NodeType,
+        expanded: enc.expanded,
       },
     });
 
@@ -183,31 +236,46 @@ function buildFlowData(
         id: `e-closure-${enc.parentId}-lcp-${enc.id}`,
         source: `closure-${enc.parentId}`,
         target: `lcp-${enc.id}`,
-        type: "smoothstep",
-        style: { stroke: "#f97316", strokeWidth: 2 },
+        type: "fiber",
+        data: {
+          sourceColor: "#a855f7", // purple (Closure)
+          targetColor: "#f97316", // orange (LCP)
+          cable: { name: "Dist", fiberCount: 12 },
+        },
       });
     } else if (enc.parentType === "olt" && enc.parentId) {
       edges.push({
         id: `e-olt-${enc.parentId}-lcp-${enc.id}`,
         source: `olt-${enc.parentId}`,
         target: `lcp-${enc.id}`,
-        type: "smoothstep",
-        style: { stroke: "#f97316", strokeWidth: 2 },
+        type: "fiber",
+        data: {
+          sourceColor: "#14b8a6", // teal (OLT)
+          targetColor: "#f97316", // orange (LCP)
+          cable: { name: "Trunk", fiberCount: 48 },
+        },
       });
     }
   });
 
   // Add NAP nodes
   naps.forEach((enc, idx) => {
+    const hasPosition = enc.canvasX !== undefined && enc.canvasY !== undefined;
+    if (hasPosition) hasPersistedPositions = true;
+
     nodes.push({
       id: `nap-${enc.id}`,
       type: "nap",
-      position: { x: idx * 160, y: 400 },
+      position: hasPosition
+        ? { x: enc.canvasX!, y: enc.canvasY! }
+        : { x: idx * 160, y: 400 },
       data: {
         label: enc.name,
         type: "nap",
         hasGps: !!(enc.gpsLat && enc.gpsLng),
         dbId: enc.id,
+        nodeType: "enclosure" as NodeType,
+        expanded: enc.expanded,
       },
     });
 
@@ -217,16 +285,25 @@ function buildFlowData(
         id: `e-lcp-${enc.parentId}-nap-${enc.id}`,
         source: `lcp-${enc.parentId}`,
         target: `nap-${enc.id}`,
-        type: "smoothstep",
-        style: { stroke: "#3b82f6", strokeWidth: 2 },
+        type: "fiber",
+        data: {
+          sourceColor: "#f97316", // orange (LCP)
+          targetColor: "#3b82f6", // blue (NAP)
+          cable: { name: "Drop", fiberCount: 4 },
+          animated: true, // Show active customer drop
+        },
       });
     }
   });
 
-  return { nodes, edges };
+  return { nodes, edges, hasPersistedPositions };
 }
 
-function TopologyCanvasInner({ projectId }: TopologyCanvasProps) {
+function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) {
+  // Use prop if provided, otherwise use context
+  const { projectId: contextProjectId } = useNetwork();
+  const projectId = propProjectId ?? contextProjectId ?? undefined;
+
   const reactFlowInstance = useReactFlow();
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -254,13 +331,13 @@ function TopologyCanvasInner({ projectId }: TopologyCanvasProps) {
   // Build flow data when data changes
   useEffect(() => {
     if (olts && enclosures) {
-      const { nodes: newNodes, edges: newEdges } = buildFlowData(
+      const { nodes: newNodes, edges: newEdges, hasPersistedPositions } = buildFlowData(
         olts,
         odfs,
         enclosures
       );
-      // Apply auto-layout if this is first load
-      if (nodes.length === 0 && newNodes.length > 0) {
+      // Apply auto-layout only if this is first load AND no persisted positions
+      if (nodes.length === 0 && newNodes.length > 0 && !hasPersistedPositions) {
         const layouted = getLayoutedElements(newNodes, newEdges);
         setNodes(layouted.nodes);
         setEdges(layouted.edges);
@@ -271,9 +348,30 @@ function TopologyCanvasInner({ projectId }: TopologyCanvasProps) {
       } else {
         setNodes(newNodes);
         setEdges(newEdges);
+        // Fit view for first load with persisted positions
+        if (nodes.length === 0 && hasPersistedPositions) {
+          setTimeout(() => {
+            reactFlowInstance.fitView({ padding: 0.2 });
+          }, 100);
+        }
       }
     }
   }, [olts, odfs, enclosures]);
+
+  // Handle node drag stop - persist position to database
+  const onNodeDragStop = useCallback(
+    async (_event: React.MouseEvent, node: Node) => {
+      const { dbId, nodeType } = node.data;
+      if (dbId && nodeType) {
+        try {
+          await updateNodePosition(nodeType, dbId, node.position.x, node.position.y);
+        } catch (err) {
+          console.error("Failed to persist node position:", err);
+        }
+      }
+    },
+    []
+  );
 
   // Handle node right-click
   const onNodeContextMenu = useCallback(
@@ -287,6 +385,83 @@ function TopologyCanvasInner({ projectId }: TopologyCanvasProps) {
       });
     },
     []
+  );
+
+  // Validate and handle new connections between nodes
+  const onConnect = useCallback(
+    async (connection: Connection) => {
+      if (!connection.source || !connection.target || !projectId) return;
+
+      // Parse node types from IDs
+      const sourceType = connection.source.split("-")[0];
+      const targetType = connection.target.split("-")[0];
+      const sourceDbId = parseInt(connection.source.split("-")[1]);
+      const targetDbId = parseInt(connection.target.split("-")[1]);
+
+      // Validate connection based on hierarchy rules
+      const validConnections: Record<string, string[]> = {
+        olt: ["odf", "closure", "lcp"],
+        odf: ["closure"],
+        closure: ["closure", "lcp"],
+        lcp: ["nap"],
+      };
+
+      if (!validConnections[sourceType]?.includes(targetType)) {
+        console.warn(`Invalid connection: ${sourceType} → ${targetType}`);
+        return;
+      }
+
+      // Update the target node's parent reference in the database
+      try {
+        if (targetType === "odf") {
+          // ODF's parent is always OLT (via oltId field)
+          await db.odfs.update(targetDbId, { oltId: sourceDbId });
+        } else if (["closure", "lcp", "nap"].includes(targetType)) {
+          // These are enclosures with parentType/parentId
+          const parentTypeMap: Record<string, "olt" | "odf" | "closure" | "lcp"> = {
+            olt: "olt",
+            odf: "odf",
+            closure: "closure",
+            lcp: "lcp",
+          };
+          await db.enclosures.update(targetDbId, {
+            parentType: parentTypeMap[sourceType],
+            parentId: sourceDbId,
+          });
+        }
+
+        // Add the edge visually with fiber styling
+        const sourceColors: Record<string, string> = {
+          olt: "#14b8a6",
+          odf: "#06b6d4",
+          closure: "#a855f7",
+          lcp: "#f97316",
+        };
+        const targetColors: Record<string, string> = {
+          odf: "#06b6d4",
+          closure: "#a855f7",
+          lcp: "#f97316",
+          nap: "#3b82f6",
+        };
+
+        const newEdge: Edge = {
+          id: `e-${connection.source}-${connection.target}`,
+          source: connection.source,
+          target: connection.target,
+          type: "fiber",
+          data: {
+            sourceColor: sourceColors[sourceType] || "#a855f7",
+            targetColor: targetColors[targetType] || "#a855f7",
+            cable: { name: "New Link", fiberCount: 12 },
+          },
+        };
+
+        setEdges((eds) => addEdge(newEdge, eds));
+      } catch (err) {
+        console.error("Failed to create connection:", err);
+      }
+    },
+    [projectId, setEdges]
   );
 
   // Close context menu on click outside
@@ -347,7 +522,7 @@ function TopologyCanvasInner({ projectId }: TopologyCanvasProps) {
 
   // Create new node
   const handleCreateNode = async () => {
-    if (!addDialog || !newNodeName.trim() || !newNodeType) return;
+    if (!addDialog || !newNodeName.trim() || !newNodeType || !projectId) return;
 
     const parentParts = addDialog.parentId.split("-");
     const parentDbId = parseInt(parentParts[parentParts.length - 1]);
@@ -470,14 +645,17 @@ function TopologyCanvasInner({ projectId }: TopologyCanvasProps) {
   };
 
   return (
-    <div ref={containerRef} className="w-full h-[700px] bg-gray-50 rounded-xl overflow-hidden border">
+    <div ref={containerRef} className="w-full h-full min-h-[500px] bg-gray-50 overflow-hidden">
       <ReactFlow
         nodes={filteredNodes}
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
         onNodeContextMenu={onNodeContextMenu}
-        nodeTypes={nodeTypes}
+        onNodeDragStop={onNodeDragStop}
+        nodeTypes={expandableNodeTypes}
+        edgeTypes={edgeTypes}
         fitView
         minZoom={0.1}
         maxZoom={2}

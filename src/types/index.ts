@@ -32,6 +32,9 @@ export interface OLT {
   address?: string;
   notes?: string;
   createdAt: Date;
+  // Canvas position for topology view
+  canvasX?: number;
+  canvasY?: number;
 }
 
 export interface OLTPonPort {
@@ -60,6 +63,9 @@ export interface ODF {
   gpsLng?: number;
   notes?: string;
   createdAt: Date;
+  // Canvas position for topology view
+  canvasX?: number;
+  canvasY?: number;
 }
 
 export type ODFPortStatus = "available" | "connected" | "reserved" | "faulty";
@@ -118,6 +124,11 @@ export interface Enclosure {
   address?: string;
   notes?: string;
   createdAt: Date;
+  // Canvas position for topology view
+  canvasX?: number;
+  canvasY?: number;
+  // Expanded state for inline editing on canvas
+  expanded?: boolean;
 }
 
 export interface Tray {

@@ -22,14 +22,15 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { NoProjectsEmpty } from "@/components/ui/EmptyState";
+import { useNetwork } from "@/contexts/NetworkContext";
 import type { Project } from "@/types";
 
 interface DashboardProps {
   onNavigate: (tab: string) => void;
-  onSelectProject?: (projectId: number) => void;
 }
 
-export default function Dashboard({ onNavigate, onSelectProject }: DashboardProps) {
+export default function Dashboard({ onNavigate }: DashboardProps) {
+  const { selectProject } = useNetwork();
   const [showNewProject, setShowNewProject] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [projectLocation, setProjectLocation] = useState("");
@@ -72,10 +73,8 @@ export default function Dashboard({ onNavigate, onSelectProject }: DashboardProp
       setProjectLocation("");
       setProjectDescription("");
 
-      // Navigate to enclosures to add first enclosure
-      if (onSelectProject) {
-        onSelectProject(id);
-      }
+      // Select the new project via context
+      selectProject(id);
     } catch {
       alert("Failed to create project");
     }
@@ -93,8 +92,8 @@ export default function Dashboard({ onNavigate, onSelectProject }: DashboardProp
   };
 
   const handleContinueProject = (project: Project) => {
-    if (onSelectProject && project.id) {
-      onSelectProject(project.id);
+    if (project.id) {
+      selectProject(project.id);
     }
     onNavigate("hierarchy");
   };

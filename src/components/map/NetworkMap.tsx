@@ -12,7 +12,7 @@ import {
   deleteMapNode,
   deleteMapRoute,
 } from "@/lib/db";
-import { useProjects } from "@/lib/db/hooks";
+import { useNetwork } from "@/contexts/NetworkContext";
 import type { MapNode, MapRoute, MapNodeType } from "@/types";
 import { MapPin, Grid3X3, Loader2 } from "lucide-react";
 
@@ -37,7 +37,9 @@ const NODE_TYPES: { value: MapNodeType; label: string; color: string }[] = [
 ];
 
 export default function NetworkMap() {
-  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  // Get project from context
+  const { projectId, projects, selectProject } = useNetwork();
+
   const [selectedNode, setSelectedNode] = useState<MapNode | null>(null);
   const [selectedRoute, setSelectedRoute] = useState<MapRoute | null>(null);
   const [editMode, setEditMode] = useState<"select" | "node" | "route">("select");
@@ -58,21 +60,20 @@ export default function NetworkMap() {
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
   const [stageScale, setStageScale] = useState(1);
 
-  // Data
-  const projects = useProjects();
+  // Data - map nodes and routes
   const nodes = useLiveQuery(
     () =>
-      selectedProjectId
-        ? db.mapNodes.where("projectId").equals(selectedProjectId).toArray()
+      projectId
+        ? db.mapNodes.where("projectId").equals(projectId).toArray()
         : [],
-    [selectedProjectId]
+    [projectId]
   );
   const routes = useLiveQuery(
     () =>
-      selectedProjectId
-        ? db.mapRoutes.where("projectId").equals(selectedProjectId).toArray()
+      projectId
+        ? db.mapRoutes.where("projectId").equals(projectId).toArray()
         : [],
-    [selectedProjectId]
+    [projectId]
   );
 
   // Handle resize
@@ -97,7 +98,7 @@ export default function NetworkMap() {
 
   // Handle stage click
   const handleStageClick = async (e: any) => {
-    if (!selectedProjectId) return;
+    if (!projectId) return;
 
     // Get click position relative to stage
     const stage = e.target.getStage();
@@ -108,7 +109,7 @@ export default function NetworkMap() {
     if (editMode === "node") {
       // Create new node
       const id = await createMapNode({
-        projectId: selectedProjectId,
+        projectId: projectId,
         type: nodeType,
         label: `${NODE_TYPES.find((t) => t.value === nodeType)?.label || "Node"} ${(nodes?.length || 0) + 1}`,
         x,
@@ -133,7 +134,7 @@ export default function NetworkMap() {
       } else if (routeStartNode !== node.id) {
         // Create route
         await createMapRoute({
-          projectId: selectedProjectId!,
+          projectId: projectId!,
           fromNodeId: routeStartNode,
           toNodeId: node.id!,
           color: "#6b7280",
@@ -225,8 +226,8 @@ export default function NetworkMap() {
           <div className="flex-1 min-w-[200px]">
             <label className="block text-sm font-medium text-gray-700 mb-1">Project</label>
             <select
-              value={selectedProjectId || ""}
-              onChange={(e) => setSelectedProjectId(parseInt(e.target.value) || null)}
+              value={projectId || ""}
+              onChange={(e) => selectProject(parseInt(e.target.value) || null)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-800"
             >
               <option value="">Select a project...</option>
@@ -239,7 +240,7 @@ export default function NetworkMap() {
           </div>
 
           {/* View Mode Toggle */}
-          {selectedProjectId && (
+          {projectId && (
             <div className="flex items-center gap-1 p-1 bg-gray-100 rounded-lg">
               <button
                 onClick={() => setViewMode("gps")}
@@ -267,7 +268,7 @@ export default function NetworkMap() {
           )}
 
           {/* Schematic Edit Tools - Only show in schematic view */}
-          {selectedProjectId && viewMode === "schematic" && (
+          {projectId && viewMode === "schematic" && (
             <>
               <div className="flex items-center gap-2">
                 <button
@@ -339,13 +340,13 @@ export default function NetworkMap() {
       </div>
 
       {/* Map Content */}
-      {selectedProjectId ? (
+      {projectId ? (
         <>
           {/* GPS Map View */}
           {viewMode === "gps" && (
             <div className="bg-white rounded-2xl shadow-lg p-4">
               <div className="h-[500px]">
-                <GpsMap projectId={selectedProjectId} />
+                <GpsMap projectId={projectId} />
               </div>
               <div className="mt-3 text-sm text-gray-500">
                 Enclosures with GPS coordinates are shown on the map. Add GPS to enclosures in the Enclosures tab.
@@ -552,7 +553,7 @@ export default function NetworkMap() {
       )}
 
       {/* Legend - Only in schematic mode */}
-      {selectedProjectId && viewMode === "schematic" && (
+      {projectId && viewMode === "schematic" && (
         <div className="bg-white rounded-2xl shadow-lg p-4">
           <h3 className="font-semibold text-gray-800 mb-3">Legend</h3>
           <div className="flex flex-wrap gap-4">

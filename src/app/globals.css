@@ -24,3 +24,79 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ===========================================
+   FIBER EDGE GLOW ANIMATIONS
+   =========================================== */
+
+/* Pulsing glow effect for fiber connections */
+@keyframes fiber-glow-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 3px currentColor);
+  }
+  50% {
+    filter: drop-shadow(0 0 8px currentColor);
+  }
+}
+
+.fiber-edge-glow {
+  animation: fiber-glow-pulse 2s ease-in-out infinite;
+}
+
+/* Flowing light animation along fiber path */
+@keyframes fiber-flow {
+  0% {
+    stroke-dashoffset: 20;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+.fiber-edge-animated {
+  stroke-dasharray: 10 5;
+  animation: fiber-flow 1s linear infinite;
+}
+
+/* Status-based glow colors */
+.fiber-status-active {
+  --glow-color: #22c55e;
+}
+
+.fiber-status-warning {
+  --glow-color: #f59e0b;
+}
+
+.fiber-status-error {
+  --glow-color: #ef4444;
+}
+
+/* Node expansion animation */
+@keyframes node-expand {
+  from {
+    max-height: 80px;
+    opacity: 0.8;
+  }
+  to {
+    max-height: 400px;
+    opacity: 1;
+  }
+}
+
+.node-expanded {
+  animation: node-expand 0.3s ease-out forwards;
+}
+
+/* React Flow custom edge styling */
+.react-flow__edge-path {
+  transition: stroke-width 0.2s ease;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke-width: 4;
+}
+
+/* Minimap styling */
+.react-flow__minimap {
+  background: rgba(255, 255, 255, 0.95) !important;
+}

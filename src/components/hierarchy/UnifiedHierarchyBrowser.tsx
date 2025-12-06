@@ -20,6 +20,7 @@ import {
 } from "@/lib/db/hooks";
 import type { OLT, Enclosure, Port, Tray, Splitter } from "@/types";
 import ODFManager from "@/components/odf/ODFManager";
+import { useNetwork } from "@/contexts/NetworkContext";
 import {
   Server,
   Link2,
@@ -41,7 +42,7 @@ import { PortStatusSummary } from "@/components/port/PortGrid";
 import PortConnectionModal from "@/components/port/PortConnectionModal";
 
 interface UnifiedHierarchyBrowserProps {
-  projectId: number;
+  projectId?: number; // Optional - will use context if not provided
 }
 
 interface HierarchyState {
@@ -51,7 +52,11 @@ interface HierarchyState {
   selectedNAPId: number | null;
 }
 
-export default function UnifiedHierarchyBrowser({ projectId }: UnifiedHierarchyBrowserProps) {
+export default function UnifiedHierarchyBrowser({ projectId: propProjectId }: UnifiedHierarchyBrowserProps) {
+  // Use prop if provided, otherwise use context
+  const { projectId: contextProjectId } = useNetwork();
+  const projectId = propProjectId ?? contextProjectId ?? undefined;
+
   const [state, setState] = useState<HierarchyState>({
     selectedOLTId: null,
     selectedClosureId: null,
@@ -294,7 +299,7 @@ export default function UnifiedHierarchyBrowser({ projectId }: UnifiedHierarchyB
           {showODFs && (
             <div className="p-4 border-t">
               <ODFManager
-                projectId={projectId}
+                projectId={projectId!}
                 oltId={state.selectedOLTId}
                 oltName={selectedOLT.name}
               />
@@ -322,7 +327,7 @@ export default function UnifiedHierarchyBrowser({ projectId }: UnifiedHierarchyB
       {/* OLT Form Modal */}
       {showOLTForm && (
         <OLTFormModal
-          projectId={projectId}
+          projectId={projectId!}
           editingOLT={editingOLT}
           onClose={() => { setShowOLTForm(false); setEditingOLT(null); }}
           onSaved={(id) => {
@@ -336,7 +341,7 @@ export default function UnifiedHierarchyBrowser({ projectId }: UnifiedHierarchyB
       {/* Closure Form Modal */}
       {showClosureForm && state.selectedOLTId && (
         <ClosureFormModal
-          projectId={projectId}
+          projectId={projectId!}
           oltId={state.selectedOLTId}
           editingClosure={editingClosure}
           onClose={() => { setShowClosureForm(false); setEditingClosure(null); }}
@@ -351,7 +356,7 @@ export default function UnifiedHierarchyBrowser({ projectId }: UnifiedHierarchyB
       {/* LCP Form Modal */}
       {showLCPForm && state.selectedClosureId && (
         <LCPFormModal
-          projectId={projectId}
+          projectId={projectId!}
           closureId={state.selectedClosureId}
           editingLCP={editingLCP}
           onClose={() => { setShowLCPForm(false); setEditingLCP(null); }}
@@ -366,7 +371,7 @@ export default function UnifiedHierarchyBrowser({ projectId }: UnifiedHierarchyB
       {/* NAP Form Modal */}
       {showNAPForm && state.selectedLCPId && (
         <NAPFormModal
-          projectId={projectId}
+          projectId={projectId!}
           lcpId={state.selectedLCPId}
           editingNAP={editingNAP}
           onClose={() => { setShowNAPForm(false); setEditingNAP(null); }}
@@ -382,7 +387,7 @@ export default function UnifiedHierarchyBrowser({ projectId }: UnifiedHierarchyB
       {selectedPort && selectedNAPForPort && (
         <PortConnectionModal
           port={selectedPort}
-          projectId={projectId}
+          projectId={projectId!}
           isNAP={true}
           onClose={() => {
             setSelectedPort(null);
