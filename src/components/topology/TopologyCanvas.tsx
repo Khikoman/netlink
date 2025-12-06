@@ -36,6 +36,8 @@ import {
   ZoomOut,
   Maximize2,
   Palette,
+  Undo2,
+  Redo2,
 } from "lucide-react";
 import { db, updateNodePosition, type NodeType } from "@/lib/db";
 import {
@@ -810,6 +812,32 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
                 className="pl-8 pr-3 py-1.5 text-sm border rounded-md w-40 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+
+            <div className="w-px h-6 bg-gray-200" />
+
+            {/* Undo */}
+            <button
+              onClick={() => {
+                // TODO: Integrate with useUndoRedo hook
+                console.log("Undo");
+              }}
+              className="p-2 hover:bg-gray-100 rounded-md text-gray-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Undo (Ctrl+Z)"
+            >
+              <Undo2 className="w-4 h-4" />
+            </button>
+
+            {/* Redo */}
+            <button
+              onClick={() => {
+                // TODO: Integrate with useUndoRedo hook
+                console.log("Redo");
+              }}
+              className="p-2 hover:bg-gray-100 rounded-md text-gray-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Redo (Ctrl+Y)"
+            >
+              <Redo2 className="w-4 h-4" />
+            </button>
 
             <div className="w-px h-6 bg-gray-200" />
 
