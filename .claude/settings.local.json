@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(claude mcp:*)",
+      "Bash(find:*)",
+      "Bash(git -C /Users/khikoman/netlink log --oneline --all)",
+      "Bash(git config:*)",
+      "Bash(cat:*)",
+      "Bash(npm run lint:*)",
+      "Bash(npm run build:*)",
+      "Bash(ls:*)",
+      "Bash(git -C /Users/khikoman/netlink log --oneline -20)",
+      "Bash(git -C /Users/khikoman/netlink remote:*)",
+      "Bash(git -C /Users/khikoman/netlink status --short)",
+      "Bash(npm ls:*)",
+      "Bash(npm audit:*)",
+      "Bash(du -sh:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
