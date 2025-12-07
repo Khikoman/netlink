@@ -488,3 +488,77 @@ export function usePendingSyncCount() {
     return db.syncQueue.filter(item => !item.synced).count();
   }, []);
 }
+
+// ============================================
+// SPLITTER HOOKS
+// ============================================
+
+export function useSplitters(enclosureId: number | undefined) {
+  return useLiveQuery(
+    () => enclosureId ? db.splitters.where("enclosureId").equals(enclosureId).toArray() : [],
+    [enclosureId]
+  );
+}
+
+export function useSplitter(id: number | undefined) {
+  return useLiveQuery(() => id ? db.splitters.get(id) : undefined, [id]);
+}
+
+// ============================================
+// PORT HOOKS
+// ============================================
+
+export function usePorts(enclosureId: number | undefined) {
+  return useLiveQuery(
+    () => enclosureId ? db.ports.where("enclosureId").equals(enclosureId).toArray() : [],
+    [enclosureId]
+  );
+}
+
+export function usePort(id: number | undefined) {
+  return useLiveQuery(() => id ? db.ports.get(id) : undefined, [id]);
+}
+
+export function usePortsBySplitter(splitterId: number | undefined) {
+  return useLiveQuery(
+    () => splitterId ? db.ports.where("splitterId").equals(splitterId).toArray() : [],
+    [splitterId]
+  );
+}
+
+// ============================================
+// CUSTOMER ATTACHMENT HOOKS
+// ============================================
+
+export function useAttachmentsByPort(portId: number | undefined) {
+  return useLiveQuery(
+    () => portId ? db.customerAttachments.where("portId").equals(portId).toArray() : [],
+    [portId]
+  );
+}
+
+export function useAttachmentsByProject(projectId: number | undefined) {
+  return useLiveQuery(
+    () => projectId ? db.customerAttachments.where("projectId").equals(projectId).toArray() : [],
+    [projectId]
+  );
+}
+
+export function useAttachment(id: number | undefined) {
+  return useLiveQuery(() => id ? db.customerAttachments.get(id) : undefined, [id]);
+}
+
+// ============================================
+// OTDR TRACE HOOKS
+// ============================================
+
+export function useOtdrTrace(id: number | undefined) {
+  return useLiveQuery(() => id ? db.otdrTraces.get(id) : undefined, [id]);
+}
+
+export function useOtdrTracesBySplice(spliceId: number | undefined) {
+  return useLiveQuery(
+    () => spliceId ? db.otdrTraces.where("spliceId").equals(spliceId).toArray() : [],
+    [spliceId]
+  );
+}

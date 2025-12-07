@@ -313,6 +313,9 @@ export async function updateCable(id: number, updates: Partial<Cable>) {
 }
 
 export async function deleteCable(id: number) {
+  // Cascade delete: remove all splices referencing this cable
+  await db.splices.where("cableAId").equals(id).delete();
+  await db.splices.where("cableBId").equals(id).delete();
   return db.cables.delete(id);
 }
 
@@ -560,6 +563,8 @@ export async function updatePort(id: number, updates: Partial<Port>) {
 }
 
 export async function deletePort(id: number) {
+  // Cascade delete: remove all customer attachments for this port
+  await db.customerAttachments.where("portId").equals(id).delete();
   return db.ports.delete(id);
 }
 

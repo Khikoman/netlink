@@ -16,6 +16,7 @@ import ReactFlow, {
   BackgroundVariant,
   ReactFlowProvider,
   useReactFlow,
+  SelectionMode,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import {
@@ -52,6 +53,9 @@ import { fiberEdgeTypes } from "./edges/FiberEdge";
 import { getLayoutedElements } from "@/lib/topology/layoutUtils";
 import { FloatingPalette } from "./FloatingPalette";
 import { FloatingSplicePanel } from "./FloatingSplicePanel";
+import LocationPicker from "@/components/map/LocationPicker";
+import { useUndoRedo, createCommand } from "@/hooks/useUndoRedo";
+import { NodeEditDialog } from "./NodeEditDialog";
 import type { OLT, ODF, Enclosure } from "@/types";
 
 // Combine edge types
@@ -335,10 +339,19 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
       status: "completed" | "pending" | "failed";
     }>;
   } | null>(null);
-  const [editDialog, setEditDialog] = useState<{ nodeId: string; nodeType: string } | null>(null);
-  const [gpsDialog, setGpsDialog] = useState<{ nodeId: string; nodeType: string } | null>(null);
+  const [editDialog, setEditDialog] = useState<{ nodeId: string; nodeType: string; dbId: number } | null>(null);
+  const [gpsDialog, setGpsDialog] = useState<{ nodeId: string; nodeType: string; dbId: number; lat?: number; lng?: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
+
+  // Initialize undo/redo system
+  const {
+    executeCommand,
+    undoCommand,
+    redoCommand,
+    canUndoCommand,
+    canRedoCommand,
+  } = useUndoRedo(null);
 
   // Fetch data
   const olts = useOLTs(projectId);
@@ -790,7 +803,10 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
 
   // Handle edit from toolbar
   const handleNodeEdit = useCallback((nodeId: string, nodeType: string) => {
-    setEditDialog({ nodeId, nodeType });
+    // Extract dbId from nodeId (format: "type-id")
+    const parts = nodeId.split("-");
+    const dbId = parseInt(parts[parts.length - 1]);
+    setEditDialog({ nodeId, nodeType, dbId });
   }, []);
 
   // Handle delete from toolbar
@@ -802,6 +818,34 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
       performDelete(nodeId);
     }
   }, [edges]);
+
+  // Handle keyboard shortcuts (Delete key)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't handle if dialog is open or if in an input field
+      if (editDialog || addDialog || gpsDialog || deleteConfirm) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      // Delete or Backspace to delete selected node(s)
+      if (e.key === "Delete" || e.key === "Backspace") {
+        // Get all selected nodes that are not OLTs
+        const selectedNodes = nodes.filter(
+          (n) => n.selected && n.data?.type !== "olt"
+        );
+
+        if (selectedNodes.length > 0) {
+          e.preventDefault();
+          // Delete each selected node (non-OLT)
+          for (const node of selectedNodes) {
+            handleNodeDelete(node.id);
+          }
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [nodes, editDialog, addDialog, gpsDialog, deleteConfirm, handleNodeDelete]);
 
   // Handle duplicate from toolbar
   const handleNodeDuplicate = useCallback(async (nodeId: string, nodeType: string) => {
@@ -855,8 +899,34 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
   }, [projectId]);
 
   // Handle set GPS location from toolbar
-  const handleNodeSetLocation = useCallback((nodeId: string, nodeType: string) => {
-    setGpsDialog({ nodeId, nodeType });
+  const handleNodeSetLocation = useCallback(async (nodeId: string, nodeType: string) => {
+    // Extract dbId from nodeId (format: "type-id")
+    const parts = nodeId.split("-");
+    const dbId = parseInt(parts[parts.length - 1]);
+
+    // Fetch current GPS coordinates
+    let lat: number | undefined;
+    let lng: number | undefined;
+
+    try {
+      if (nodeType === "olt") {
+        const olt = await db.olts.get(dbId);
+        lat = olt?.gpsLat;
+        lng = olt?.gpsLng;
+      } else if (nodeType === "odf") {
+        const odf = await db.odfs.get(dbId);
+        lat = odf?.gpsLat;
+        lng = odf?.gpsLng;
+      } else {
+        const enclosure = await db.enclosures.get(dbId);
+        lat = enclosure?.gpsLat;
+        lng = enclosure?.gpsLng;
+      }
+    } catch (err) {
+      console.error("Failed to fetch GPS coordinates:", err);
+    }
+
+    setGpsDialog({ nodeId, nodeType, dbId, lat, lng });
   }, []);
 
   // Handle open splice editor for an edge
@@ -983,6 +1053,10 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
           maxZoom={2}
           defaultViewport={{ x: 0, y: 0, zoom: 0.8 }}
           proOptions={{ hideAttribution: true }}
+          selectionOnDrag
+          selectNodesOnDrag
+          panOnDrag={[1, 2]}
+          selectionMode={SelectionMode.Partial}
         >
         {/* Toolbar Panel */}
         <Panel position="top-left" className="flex gap-2">
@@ -1003,10 +1077,8 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
 
             {/* Undo */}
             <button
-              onClick={() => {
-                // TODO: Integrate with useUndoRedo hook
-                console.log("Undo");
-              }}
+              onClick={() => undoCommand()}
+              disabled={!canUndoCommand}
               className="p-2 hover:bg-gray-100 rounded-md text-gray-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               title="Undo (Ctrl+Z)"
             >
@@ -1015,10 +1087,8 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
 
             {/* Redo */}
             <button
-              onClick={() => {
-                // TODO: Integrate with useUndoRedo hook
-                console.log("Redo");
-              }}
+              onClick={() => redoCommand()}
+              disabled={!canRedoCommand}
               className="p-2 hover:bg-gray-100 rounded-md text-gray-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               title="Redo (Ctrl+Y)"
             >
@@ -1132,35 +1202,14 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
         />
       )}
 
-      {/* Quick Edit Dialog */}
+      {/* Node Edit Dialog */}
       {editDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Edit {editDialog.nodeType.toUpperCase()}</h3>
-              <button
-                onClick={() => setEditDialog(null)}
-                className="p-1 hover:bg-gray-100 rounded-full"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <p className="text-gray-600 mb-4">
-              Edit dialog for node: {editDialog.nodeId}
-            </p>
-            <div className="text-sm text-gray-500 mb-4">
-              (Full edit functionality coming soon - use right-click context menu for now)
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setEditDialog(null)}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+        <NodeEditDialog
+          nodeId={editDialog.nodeId}
+          nodeType={editDialog.nodeType}
+          dbId={editDialog.dbId}
+          onClose={() => setEditDialog(null)}
+        />
       )}
 
       {/* GPS Location Dialog */}
@@ -1179,18 +1228,48 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-gray-600 mb-4">
-              Set GPS coordinates for: {gpsDialog.nodeId}
+            <p className="text-gray-600 mb-4 text-sm">
+              Setting location for: <span className="font-medium">{gpsDialog.nodeType.toUpperCase()}</span>
             </p>
-            <div className="text-sm text-gray-500 mb-4">
-              (GPS picker integration coming soon - coordinates can be set via right-click menu)
-            </div>
-            <div className="flex gap-2">
+
+            <LocationPicker
+              latitude={gpsDialog.lat}
+              longitude={gpsDialog.lng}
+              onLocationChange={(lat, lng) => {
+                setGpsDialog({ ...gpsDialog, lat, lng });
+              }}
+            />
+
+            <div className="flex gap-2 mt-4">
               <button
                 onClick={() => setGpsDialog(null)}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  if (!gpsDialog.lat || !gpsDialog.lng) {
+                    alert("Please set a location first");
+                    return;
+                  }
+                  try {
+                    if (gpsDialog.nodeType === "olt") {
+                      await db.olts.update(gpsDialog.dbId, { gpsLat: gpsDialog.lat, gpsLng: gpsDialog.lng });
+                    } else if (gpsDialog.nodeType === "odf") {
+                      await db.odfs.update(gpsDialog.dbId, { gpsLat: gpsDialog.lat, gpsLng: gpsDialog.lng });
+                    } else {
+                      await db.enclosures.update(gpsDialog.dbId, { gpsLat: gpsDialog.lat, gpsLng: gpsDialog.lng });
+                    }
+                    setGpsDialog(null);
+                  } catch (err) {
+                    console.error("Failed to save GPS location:", err);
+                    alert("Failed to save GPS location");
+                  }
+                }}
                 className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
               >
-                Close
+                Save Location
               </button>
             </div>
           </div>
