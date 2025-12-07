@@ -732,27 +732,17 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
   };
 
   // Count children of a node
-  const countChildren = (nodeId: string): number => {
+  const countChildren = useCallback((nodeId: string): number => {
     return edges.filter((e) => e.source === nodeId).length;
-  };
-
-  // Handle delete
-  const handleDelete = () => {
-    if (!contextMenu) return;
-    const childCount = countChildren(contextMenu.nodeId);
-    if (childCount > 0) {
-      setDeleteConfirm({ nodeId: contextMenu.nodeId, childCount });
-    } else {
-      performDelete(contextMenu.nodeId);
-    }
-    setContextMenu(null);
-  };
+  }, [edges]);
 
   // Perform delete with cascade
-  const performDelete = async (nodeId: string) => {
+  const performDelete = useCallback(async (nodeId: string) => {
     const parts = nodeId.split("-");
     const type = parts[0];
     const dbId = parseInt(parts[parts.length - 1]);
+
+    console.log("performDelete called:", { nodeId, type, dbId });
 
     try {
       // Get all child node IDs recursively
@@ -762,11 +752,13 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
       };
 
       const allNodeIds = [nodeId, ...getChildIds(nodeId)];
+      console.log("Deleting nodes:", allNodeIds);
 
       // Delete from database using cascade-aware functions
       for (const id of allNodeIds) {
         const [t, idStr] = id.split("-");
         const dbIdToDelete = parseInt(idStr);
+        console.log("Deleting:", { t, dbIdToDelete });
         if (t === "olt") {
           await deleteOLT(dbIdToDelete);
         } else if (t === "odf") {
@@ -781,7 +773,20 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
       console.error("Failed to delete:", err);
       alert("Failed to delete node");
     }
-  };
+  }, [edges]);
+
+  // Handle delete from context menu
+  const handleDelete = useCallback(() => {
+    if (!contextMenu) return;
+    const childCount = countChildren(contextMenu.nodeId);
+    console.log("handleDelete (context menu):", { nodeId: contextMenu.nodeId, childCount });
+    if (childCount > 0) {
+      setDeleteConfirm({ nodeId: contextMenu.nodeId, childCount });
+    } else {
+      performDelete(contextMenu.nodeId);
+    }
+    setContextMenu(null);
+  }, [contextMenu, countChildren, performDelete]);
 
   // =============================================
   // NODE ACTION HANDLERS (for NodeActionsContext)
@@ -813,13 +818,15 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
 
   // Handle delete from toolbar
   const handleNodeDelete = useCallback((nodeId: string) => {
+    console.log("handleNodeDelete called:", nodeId);
     const childCount = countChildren(nodeId);
+    console.log("Child count:", childCount);
     if (childCount > 0) {
       setDeleteConfirm({ nodeId, childCount });
     } else {
       performDelete(nodeId);
     }
-  }, [edges]);
+  }, [countChildren, performDelete]);
 
   // Handle keyboard shortcuts (Delete key)
   useEffect(() => {
