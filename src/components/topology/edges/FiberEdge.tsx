@@ -30,6 +30,8 @@ interface FiberEdgeData {
     fiberCount: number;
     role?: string;
   };
+  // Action callback (passed from TopologyCanvas via edge.data)
+  onOpenSpliceEditor?: (edgeId: string) => void;
 }
 
 // Get hex color from color name
@@ -59,6 +61,8 @@ function FiberEdgeComponent({
   selected,
 }: EdgeProps<FiberEdgeData>) {
   const [isExpanded, setIsExpanded] = useState(false);
+  // Read callback from edge data (passed from TopologyCanvas)
+  const onOpenSpliceEditor = data?.onOpenSpliceEditor;
 
   // Calculate path
   const [edgePath, labelX, labelY] = getBezierPath({
@@ -215,8 +219,7 @@ function FiberEdgeComponent({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    // TODO: Open splice editor panel
-                    console.log("Edit splices for edge:", id);
+                    onOpenSpliceEditor?.(id);
                   }}
                   className="p-1.5 hover:bg-blue-50 rounded-r-full transition-colors border-l border-gray-200"
                   title="Edit Splices"
@@ -245,8 +248,7 @@ function FiberEdgeComponent({
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      // TODO: Open splice editor panel
-                      console.log("Edit splices for edge:", id);
+                      onOpenSpliceEditor?.(id);
                     }}
                     className="p-1 hover:bg-blue-100 rounded text-blue-500 transition-colors"
                     title="Edit Splices"

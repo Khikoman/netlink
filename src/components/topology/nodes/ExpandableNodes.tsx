@@ -46,6 +46,12 @@ interface BaseNodeData {
   dbId?: number;
   nodeType?: NodeType;
   expanded?: boolean;
+  // Action callbacks (passed from TopologyCanvas via node.data)
+  onAddChild?: (nodeId: string, nodeType: string) => void;
+  onEdit?: (nodeId: string, nodeType: string) => void;
+  onDelete?: (nodeId: string) => void;
+  onDuplicate?: (nodeId: string, nodeType: string) => void;
+  onSetLocation?: (nodeId: string, nodeType: string) => void;
 }
 
 // Color configurations for each node type
@@ -95,9 +101,11 @@ const typeLabels: Record<string, string> = {
 // Shows trays and splices when expanded
 // ===========================================
 
-function ExpandableClosureNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
+function ExpandableClosureNodeComponent({ data, selected, id }: NodeProps<BaseNodeData>) {
   const [isExpanded, setIsExpanded] = useState(data.expanded || false);
   const style = nodeStyles[data.type] || nodeStyles.closure;
+  // Read callbacks from data prop (passed from TopologyCanvas)
+  const { onAddChild, onEdit, onDelete, onSetLocation } = data;
 
   // Fetch trays and splices for this closure
   const trays = useLiveQuery(
@@ -149,7 +157,7 @@ function ExpandableClosureNodeComponent({ data, selected }: NodeProps<BaseNodeDa
         <button
           className="p-1.5 rounded-md bg-green-500 hover:bg-green-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
           title="Add Child"
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onAddChild?.(id, data.type); }}
         >
           <Plus className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">Add</span>
@@ -157,7 +165,7 @@ function ExpandableClosureNodeComponent({ data, selected }: NodeProps<BaseNodeDa
         <button
           className="p-1.5 rounded-md bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
           title="Edit Splices"
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onEdit?.(id, data.type); }}
         >
           <Link2 className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">Splices</span>
@@ -165,14 +173,14 @@ function ExpandableClosureNodeComponent({ data, selected }: NodeProps<BaseNodeDa
         <button
           className="p-1.5 rounded-md bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
           title="Set GPS Location"
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onSetLocation?.(id, data.type); }}
         >
           <MapPin className="w-3.5 h-3.5" />
         </button>
         <button
           className="p-1.5 rounded-md bg-red-500 hover:bg-red-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
           title="Delete"
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onDelete?.(id); }}
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>
@@ -316,9 +324,11 @@ function TraySection({ trayId, trayNumber }: { trayId: number; trayNumber: numbe
 // Shows ports and connected customers when expanded
 // ===========================================
 
-function ExpandableNAPNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
+function ExpandableNAPNodeComponent({ data, selected, id }: NodeProps<BaseNodeData>) {
   const [isExpanded, setIsExpanded] = useState(data.expanded || false);
   const style = nodeStyles[data.type] || nodeStyles.nap;
+  // Read callbacks from data prop (passed from TopologyCanvas)
+  const { onAddChild, onEdit, onDelete, onSetLocation } = data;
 
   // Fetch ports for this NAP
   const ports = useLiveQuery(
@@ -360,7 +370,7 @@ function ExpandableNAPNodeComponent({ data, selected }: NodeProps<BaseNodeData>)
         <button
           className="p-1.5 rounded-md bg-green-500 hover:bg-green-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
           title="Add Customer"
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onAddChild?.(id, data.type); }}
         >
           <Plus className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">Customer</span>
@@ -368,7 +378,7 @@ function ExpandableNAPNodeComponent({ data, selected }: NodeProps<BaseNodeData>)
         <button
           className="p-1.5 rounded-md bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
           title="Edit Ports"
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onEdit?.(id, data.type); }}
         >
           <Edit3 className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">Ports</span>
@@ -376,14 +386,14 @@ function ExpandableNAPNodeComponent({ data, selected }: NodeProps<BaseNodeData>)
         <button
           className="p-1.5 rounded-md bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
           title="Set GPS Location"
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onSetLocation?.(id, data.type); }}
         >
           <MapPin className="w-3.5 h-3.5" />
         </button>
         <button
           className="p-1.5 rounded-md bg-red-500 hover:bg-red-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
           title="Delete"
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onDelete?.(id); }}
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>
@@ -511,10 +521,12 @@ function CustomerPortItem({ port }: { port: { id?: number; portNumber: number; l
 // BASIC NODE (for OLT, ODF, LCP - no expansion)
 // ===========================================
 
-function BasicNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
+function BasicNodeComponent({ data, selected, id }: NodeProps<BaseNodeData>) {
   const style = nodeStyles[data.type] || nodeStyles.closure;
   const showTopHandle = data.type !== "olt";
   const showBottomHandle = data.type !== "nap";
+  // Read callbacks from data prop (passed from TopologyCanvas)
+  const { onAddChild, onEdit, onDelete, onDuplicate, onSetLocation } = data;
 
   // Determine which child types this node can have
   const canHaveChildren = ["olt", "odf", "closure", "lcp"].includes(data.type);
@@ -540,7 +552,7 @@ function BasicNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
           <button
             className="p-1.5 rounded-md bg-green-500 hover:bg-green-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
             title="Add Child"
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onAddChild?.(id, data.type); }}
           >
             <Plus className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Add</span>
@@ -549,7 +561,7 @@ function BasicNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
         <button
           className="p-1.5 rounded-md bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
           title="Edit"
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onEdit?.(id, data.type); }}
         >
           <Edit3 className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">Edit</span>
@@ -557,14 +569,14 @@ function BasicNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
         <button
           className="p-1.5 rounded-md bg-gray-500 hover:bg-gray-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
           title="Duplicate"
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onDuplicate?.(id, data.type); }}
         >
           <Copy className="w-3.5 h-3.5" />
         </button>
         <button
           className="p-1.5 rounded-md bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
           title="Set GPS Location"
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onSetLocation?.(id, data.type); }}
         >
           <MapPin className="w-3.5 h-3.5" />
         </button>
@@ -572,7 +584,7 @@ function BasicNodeComponent({ data, selected }: NodeProps<BaseNodeData>) {
           <button
             className="p-1.5 rounded-md bg-red-500 hover:bg-red-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
             title="Delete"
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onDelete?.(id); }}
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>

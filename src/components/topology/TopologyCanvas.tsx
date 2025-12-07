@@ -46,10 +46,12 @@ import {
   useEnclosures,
 } from "@/lib/db/hooks";
 import { useNetwork } from "@/contexts/NetworkContext";
+import { NodeActionsProvider } from "@/contexts/NodeActionsContext";
 import { expandableNodeTypes } from "./nodes/ExpandableNodes";
 import { fiberEdgeTypes } from "./edges/FiberEdge";
 import { getLayoutedElements } from "@/lib/topology/layoutUtils";
 import { FloatingPalette } from "./FloatingPalette";
+import { FloatingSplicePanel } from "./FloatingSplicePanel";
 import type { OLT, ODF, Enclosure } from "@/types";
 
 // Combine edge types
@@ -319,6 +321,22 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
   const [newNodeType, setNewNodeType] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<{ nodeId: string; childCount: number } | null>(null);
   const [showPalette, setShowPalette] = useState(true);
+  const [splicePanel, setSplicePanel] = useState<{
+    edgeId: string;
+    cableAName: string;
+    cableBName: string;
+    fiberCountA: number;
+    fiberCountB: number;
+    connections: Array<{
+      fiberA: number;
+      fiberB: number;
+      colorA: string;
+      colorB: string;
+      status: "completed" | "pending" | "failed";
+    }>;
+  } | null>(null);
+  const [editDialog, setEditDialog] = useState<{ nodeId: string; nodeType: string } | null>(null);
+  const [gpsDialog, setGpsDialog] = useState<{ nodeId: string; nodeType: string } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
@@ -334,7 +352,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     }
   }, [projectId]);
 
-  // Build flow data when data changes
+  // Build flow data when data changes - callbacks injected in separate useEffect
   useEffect(() => {
     if (olts && enclosures) {
       const { nodes: newNodes, edges: newEdges, hasPersistedPositions } = buildFlowData(
@@ -750,18 +768,176 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     }
   };
 
-  // Filter nodes by search
+  // =============================================
+  // NODE ACTION HANDLERS (for NodeActionsContext)
+  // =============================================
+
+  // Handle add child from toolbar
+  const handleNodeAddChild = useCallback((nodeId: string, nodeType: string) => {
+    const allowedTypes = getAllowedChildTypes(nodeType);
+    if (allowedTypes.length === 0) {
+      alert("This node type cannot have children");
+      return;
+    }
+    setAddDialog({
+      parentId: nodeId,
+      parentType: nodeType,
+      allowedTypes,
+    });
+    setNewNodeType(allowedTypes[0]);
+    setNewNodeName("");
+  }, []);
+
+  // Handle edit from toolbar
+  const handleNodeEdit = useCallback((nodeId: string, nodeType: string) => {
+    setEditDialog({ nodeId, nodeType });
+  }, []);
+
+  // Handle delete from toolbar
+  const handleNodeDelete = useCallback((nodeId: string) => {
+    const childCount = countChildren(nodeId);
+    if (childCount > 0) {
+      setDeleteConfirm({ nodeId, childCount });
+    } else {
+      performDelete(nodeId);
+    }
+  }, [edges]);
+
+  // Handle duplicate from toolbar
+  const handleNodeDuplicate = useCallback(async (nodeId: string, nodeType: string) => {
+    if (!projectId) return;
+
+    const parts = nodeId.split("-");
+    const dbId = parseInt(parts[parts.length - 1]);
+
+    try {
+      if (nodeType === "olt") {
+        const original = await db.olts.get(dbId);
+        if (original) {
+          await db.olts.add({
+            ...original,
+            id: undefined,
+            name: `${original.name}-copy`,
+            canvasX: (original.canvasX || 0) + 50,
+            canvasY: (original.canvasY || 0) + 50,
+            createdAt: new Date(),
+          });
+        }
+      } else if (nodeType === "odf") {
+        const original = await db.odfs.get(dbId);
+        if (original) {
+          await db.odfs.add({
+            ...original,
+            id: undefined,
+            name: `${original.name}-copy`,
+            canvasX: (original.canvasX || 0) + 50,
+            canvasY: (original.canvasY || 0) + 50,
+            createdAt: new Date(),
+          });
+        }
+      } else if (["closure", "lcp", "nap"].includes(nodeType)) {
+        const original = await db.enclosures.get(dbId);
+        if (original) {
+          await db.enclosures.add({
+            ...original,
+            id: undefined,
+            name: `${original.name}-copy`,
+            canvasX: (original.canvasX || 0) + 50,
+            canvasY: (original.canvasY || 0) + 50,
+            createdAt: new Date(),
+          });
+        }
+      }
+    } catch (err) {
+      console.error("Failed to duplicate:", err);
+      alert("Failed to duplicate node");
+    }
+  }, [projectId]);
+
+  // Handle set GPS location from toolbar
+  const handleNodeSetLocation = useCallback((nodeId: string, nodeType: string) => {
+    setGpsDialog({ nodeId, nodeType });
+  }, []);
+
+  // Handle open splice editor for an edge
+  const handleOpenSpliceEditor = useCallback((edgeId: string) => {
+    // Find the edge and extract info
+    const edge = edges.find(e => e.id === edgeId);
+    if (!edge) return;
+
+    const sourceNode = nodes.find(n => n.id === edge.source);
+    const targetNode = nodes.find(n => n.id === edge.target);
+
+    setSplicePanel({
+      edgeId,
+      cableAName: sourceNode?.data?.label || "Cable A",
+      cableBName: targetNode?.data?.label || "Cable B",
+      fiberCountA: edge.data?.cable?.fiberCount || 12,
+      fiberCountB: edge.data?.cable?.fiberCount || 12,
+      connections: edge.data?.connections || [],
+    });
+  }, [edges, nodes]);
+
+  // Save splice connections
+  const handleSaveSplices = useCallback((connections: Array<{
+    fiberA: number;
+    fiberB: number;
+    colorA: string;
+    colorB: string;
+    status: "completed" | "pending" | "failed";
+  }>) => {
+    if (!splicePanel) return;
+
+    // Update the edge data with new connections
+    setEdges(eds => eds.map(e => {
+      if (e.id === splicePanel.edgeId) {
+        return {
+          ...e,
+          data: {
+            ...e.data,
+            connections,
+          },
+        };
+      }
+      return e;
+    }));
+
+    setSplicePanel(null);
+  }, [splicePanel, setEdges]);
+
+  // Filter nodes by search AND inject action callbacks into node data
   const filteredNodes = useMemo(() => {
-    if (!searchQuery.trim()) return nodes;
-    const query = searchQuery.toLowerCase();
+    const query = searchQuery.trim().toLowerCase();
     return nodes.map((node) => ({
       ...node,
-      style: {
-        ...node.style,
-        opacity: node.data.label.toLowerCase().includes(query) ? 1 : 0.3,
+      data: {
+        ...node.data,
+        // Inject action callbacks into each node's data
+        onAddChild: handleNodeAddChild,
+        onEdit: handleNodeEdit,
+        onDelete: handleNodeDelete,
+        onDuplicate: handleNodeDuplicate,
+        onSetLocation: handleNodeSetLocation,
+      },
+      style: query
+        ? {
+            ...node.style,
+            opacity: node.data.label.toLowerCase().includes(query) ? 1 : 0.3,
+          }
+        : node.style,
+    }));
+  }, [nodes, searchQuery, handleNodeAddChild, handleNodeEdit, handleNodeDelete, handleNodeDuplicate, handleNodeSetLocation]);
+
+  // Inject action callbacks into edge data
+  const edgesWithCallbacks = useMemo(() => {
+    return edges.map((edge) => ({
+      ...edge,
+      data: {
+        ...edge.data,
+        onOpenSpliceEditor: handleOpenSpliceEditor,
       },
     }));
-  }, [nodes, searchQuery]);
+  }, [edges, handleOpenSpliceEditor]);
 
   const typeIcons: Record<string, React.ReactNode> = {
     odf: <Box className="w-4 h-4" />,
@@ -780,9 +956,19 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
       />
 
       <div ref={reactFlowWrapper} className="w-full h-full">
+        <NodeActionsProvider
+          actions={{
+            onAddChild: handleNodeAddChild,
+            onEdit: handleNodeEdit,
+            onDelete: handleNodeDelete,
+            onDuplicate: handleNodeDuplicate,
+            onSetLocation: handleNodeSetLocation,
+            onOpenSpliceEditor: handleOpenSpliceEditor,
+          }}
+        >
         <ReactFlow
           nodes={filteredNodes}
-          edges={edges}
+          edges={edgesWithCallbacks}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
@@ -928,7 +1114,88 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
 
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#e2e8f0" />
       </ReactFlow>
+      </NodeActionsProvider>
       </div>
+
+      {/* Floating Splice Panel */}
+      {splicePanel && (
+        <FloatingSplicePanel
+          isOpen={true}
+          onClose={() => setSplicePanel(null)}
+          edgeId={splicePanel.edgeId}
+          cableAName={splicePanel.cableAName}
+          cableBName={splicePanel.cableBName}
+          fiberCountA={splicePanel.fiberCountA}
+          fiberCountB={splicePanel.fiberCountB}
+          connections={splicePanel.connections}
+          onSave={handleSaveSplices}
+        />
+      )}
+
+      {/* Quick Edit Dialog */}
+      {editDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Edit {editDialog.nodeType.toUpperCase()}</h3>
+              <button
+                onClick={() => setEditDialog(null)}
+                className="p-1 hover:bg-gray-100 rounded-full"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-gray-600 mb-4">
+              Edit dialog for node: {editDialog.nodeId}
+            </p>
+            <div className="text-sm text-gray-500 mb-4">
+              (Full edit functionality coming soon - use right-click context menu for now)
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setEditDialog(null)}
+                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GPS Location Dialog */}
+      {gpsDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <MapPin className="w-5 h-5 text-indigo-600" />
+                Set GPS Location
+              </h3>
+              <button
+                onClick={() => setGpsDialog(null)}
+                className="p-1 hover:bg-gray-100 rounded-full"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-gray-600 mb-4">
+              Set GPS coordinates for: {gpsDialog.nodeId}
+            </p>
+            <div className="text-sm text-gray-500 mb-4">
+              (GPS picker integration coming soon - coordinates can be set via right-click menu)
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setGpsDialog(null)}
+                className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Context Menu */}
       {contextMenu && (
