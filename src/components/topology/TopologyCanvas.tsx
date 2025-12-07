@@ -837,14 +837,12 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
 
       // Delete or Backspace to delete selected node(s)
       if (e.key === "Delete" || e.key === "Backspace") {
-        // Get all selected nodes that are not OLTs
-        const selectedNodes = nodes.filter(
-          (n) => n.selected && n.data?.type !== "olt"
-        );
+        // Get all selected nodes (including OLTs)
+        const selectedNodes = nodes.filter((n) => n.selected);
 
         if (selectedNodes.length > 0) {
           e.preventDefault();
-          // Delete each selected node (non-OLT)
+          // Delete each selected node
           for (const node of selectedNodes) {
             handleNodeDelete(node.id);
           }
@@ -1308,15 +1306,13 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
             <Edit className="w-4 h-4 text-blue-600" />
             Edit Details
           </button>
-          {contextMenu.nodeType !== "olt" && (
-            <button
-              onClick={handleDelete}
-              className="w-full px-3 py-2 text-left text-sm hover:bg-red-50 text-red-600 flex items-center gap-2"
-            >
-              <Trash2 className="w-4 h-4" />
-              Delete
-            </button>
-          )}
+          <button
+            onClick={handleDelete}
+            className="w-full px-3 py-2 text-left text-sm hover:bg-red-50 text-red-600 flex items-center gap-2"
+          >
+            <Trash2 className="w-4 h-4" />
+            Delete
+          </button>
         </div>
       )}
 

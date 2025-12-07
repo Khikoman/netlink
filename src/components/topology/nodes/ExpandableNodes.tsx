@@ -530,7 +530,8 @@ function BasicNodeComponent({ data, selected, id }: NodeProps<BaseNodeData>) {
 
   // Determine which child types this node can have
   const canHaveChildren = ["olt", "odf", "closure", "lcp"].includes(data.type);
-  const canDelete = data.type !== "olt";
+  // All nodes can be deleted (OLT deletion will cascade to all children)
+  const canDelete = true;
 
   return (
     <div
