@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Stage, Layer, Circle, Line, Text, Group, Rect } from "react-konva";
+import Konva from "konva";
 import { useLiveQuery } from "dexie-react-hooks";
 import dynamic from "next/dynamic";
 import {
@@ -97,12 +98,14 @@ export default function NetworkMap() {
   };
 
   // Handle stage click
-  const handleStageClick = async (e: any) => {
+  const handleStageClick = async (e: Konva.KonvaEventObject<MouseEvent>) => {
     if (!projectId) return;
 
     // Get click position relative to stage
     const stage = e.target.getStage();
+    if (!stage) return;
     const pos = stage.getPointerPosition();
+    if (!pos) return;
     const x = (pos.x - stagePos.x) / stageScale;
     const y = (pos.y - stagePos.y) / stageScale;
 
@@ -188,12 +191,14 @@ export default function NetworkMap() {
   };
 
   // Handle wheel zoom
-  const handleWheel = (e: any) => {
+  const handleWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
     e.evt.preventDefault();
     const scaleBy = 1.1;
     const stage = e.target.getStage();
+    if (!stage) return;
     const oldScale = stageScale;
     const pointerPosition = stage.getPointerPosition();
+    if (!pointerPosition) return;
 
     const mousePointTo = {
       x: (pointerPosition.x - stagePos.x) / oldScale,
