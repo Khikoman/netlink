@@ -40,7 +40,7 @@ import {
   Undo2,
   Redo2,
 } from "lucide-react";
-import { db, updateNodePosition, type NodeType } from "@/lib/db";
+import { db, updateNodePosition, deleteOLT, deleteODF, deleteEnclosure, type NodeType } from "@/lib/db";
 import {
   useOLTs,
   useODFsByOLT,
@@ -763,14 +763,16 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
 
       const allNodeIds = [nodeId, ...getChildIds(nodeId)];
 
-      // Delete from database
+      // Delete from database using cascade-aware functions
       for (const id of allNodeIds) {
         const [t, idStr] = id.split("-");
         const dbIdToDelete = parseInt(idStr);
-        if (t === "odf") {
-          await db.odfs.delete(dbIdToDelete);
+        if (t === "olt") {
+          await deleteOLT(dbIdToDelete);
+        } else if (t === "odf") {
+          await deleteODF(dbIdToDelete);
         } else if (t === "closure" || t === "lcp" || t === "nap") {
-          await db.enclosures.delete(dbIdToDelete);
+          await deleteEnclosure(dbIdToDelete);
         }
       }
 
