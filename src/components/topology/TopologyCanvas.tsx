@@ -43,7 +43,7 @@ import {
 import { db, updateNodePosition, deleteOLT, deleteODF, deleteEnclosure, type NodeType } from "@/lib/db";
 import {
   useOLTs,
-  useODFsByOLT,
+  useODFs,
   useEnclosures,
 } from "@/lib/db/hooks";
 import { useNetwork } from "@/contexts/NetworkContext";
@@ -353,21 +353,14 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     canRedoCommand,
   } = useUndoRedo(null);
 
-  // Fetch data
+  // Fetch data using reactive hooks (useLiveQuery) for automatic updates
   const olts = useOLTs(projectId);
+  const odfs = useODFs(projectId);
   const enclosures = useEnclosures(projectId);
-
-  // Get all ODFs for project
-  const [odfs, setOdfs] = useState<ODF[]>([]);
-  useEffect(() => {
-    if (projectId) {
-      db.odfs.where("projectId").equals(projectId).toArray().then(setOdfs);
-    }
-  }, [projectId]);
 
   // Build flow data when data changes - callbacks injected in separate useEffect
   useEffect(() => {
-    if (olts && enclosures) {
+    if (olts && enclosures && odfs) {
       const { nodes: newNodes, edges: newEdges, hasPersistedPositions } = buildFlowData(
         olts,
         odfs,
