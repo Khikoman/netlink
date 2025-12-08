@@ -742,8 +742,6 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     const type = parts[0];
     const dbId = parseInt(parts[parts.length - 1]);
 
-    console.log("performDelete called:", { nodeId, type, dbId });
-
     try {
       // Get all child node IDs recursively
       const getChildIds = (id: string): string[] => {
@@ -752,13 +750,11 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
       };
 
       const allNodeIds = [nodeId, ...getChildIds(nodeId)];
-      console.log("Deleting nodes:", allNodeIds);
 
       // Delete from database using cascade-aware functions
       for (const id of allNodeIds) {
         const [t, idStr] = id.split("-");
         const dbIdToDelete = parseInt(idStr);
-        console.log("Deleting:", { t, dbIdToDelete });
         if (t === "olt") {
           await deleteOLT(dbIdToDelete);
         } else if (t === "odf") {
@@ -779,7 +775,6 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
   const handleDelete = useCallback(() => {
     if (!contextMenu) return;
     const childCount = countChildren(contextMenu.nodeId);
-    console.log("handleDelete (context menu):", { nodeId: contextMenu.nodeId, childCount });
     if (childCount > 0) {
       setDeleteConfirm({ nodeId: contextMenu.nodeId, childCount });
     } else {
@@ -818,9 +813,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
 
   // Handle delete from toolbar
   const handleNodeDelete = useCallback((nodeId: string) => {
-    console.log("handleNodeDelete called:", nodeId);
     const childCount = countChildren(nodeId);
-    console.log("Child count:", childCount);
     if (childCount > 0) {
       setDeleteConfirm({ nodeId, childCount });
     } else {
@@ -1301,7 +1294,12 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
           )}
           <button
             className="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 flex items-center gap-2"
-            onClick={() => setContextMenu(null)}
+            onClick={() => {
+              if (contextMenu) {
+                handleNodeEdit(contextMenu.nodeId, contextMenu.nodeType);
+              }
+              setContextMenu(null);
+            }}
           >
             <Edit className="w-4 h-4 text-blue-600" />
             Edit Details

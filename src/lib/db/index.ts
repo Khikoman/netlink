@@ -210,14 +210,40 @@ export async function updateProject(id: number, updates: Partial<Project>) {
 }
 
 export async function deleteProject(id: number) {
-  // Delete all related data
+  // Delete all related data in proper order
+
+  // Delete OLTs (cascades to PON ports)
+  const olts = await db.olts.where("projectId").equals(id).toArray();
+  for (const olt of olts) {
+    if (olt.id) await deleteOLT(olt.id);
+  }
+
+  // Delete ODFs (cascades to ODF ports)
+  const odfs = await db.odfs.where("projectId").equals(id).toArray();
+  for (const odf of odfs) {
+    if (odf.id) await deleteODF(odf.id);
+  }
+
+  // Delete enclosures (cascades to trays, splices, splitters, ports)
   const enclosures = await db.enclosures.where("projectId").equals(id).toArray();
   for (const enc of enclosures) {
     if (enc.id) await deleteEnclosure(enc.id);
   }
+
+  // Delete customer attachments
+  await db.customerAttachments.where("projectId").equals(id).delete();
+
+  // Delete cables and splices
   await db.cables.where("projectId").equals(id).delete();
+
+  // Delete map data
   await db.mapNodes.where("projectId").equals(id).delete();
   await db.mapRoutes.where("projectId").equals(id).delete();
+
+  // Delete inventory usage
+  await db.inventoryUsage.where("projectId").equals(id).delete();
+
+  // Finally delete the project
   return db.projects.delete(id);
 }
 
@@ -730,8 +756,11 @@ export async function updateODF(id: number, updates: Partial<ODF>) {
 }
 
 export async function deleteODF(id: number) {
-  // Delete all ODF ports
-  await db.odfPorts.where("odfId").equals(id).delete();
+  // Delete all ODF ports (use deleteODFPort to cascade clear odfPortId references)
+  const ports = await db.odfPorts.where("odfId").equals(id).toArray();
+  for (const port of ports) {
+    if (port.id) await deleteODFPort(port.id);
+  }
   return db.odfs.delete(id);
 }
 

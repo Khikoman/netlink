@@ -49,6 +49,12 @@ export function NodeEditDialog({ nodeId, nodeType, dbId, onClose }: NodeEditDial
   // Enclosure-specific fields
   const [enclosureType, setEnclosureType] = useState<string>("splice-closure");
 
+  // LCP-specific fields (splitter info is stored separately, but we show summary)
+  const [splitterCount, setSplitterCount] = useState(0);
+
+  // NAP-specific fields
+  const [napPortCount, setNapPortCount] = useState(8);
+
   // Load existing data
   useEffect(() => {
     async function loadData() {
@@ -77,6 +83,18 @@ export function NodeEditDialog({ nodeId, nodeType, dbId, onClose }: NodeEditDial
             setName(enclosure.name || "");
             setAddress(enclosure.address || "");
             setEnclosureType(enclosure.type || "splice-closure");
+
+            // Load LCP splitter count
+            if (nodeType === "lcp") {
+              const splitters = await db.splitters.where("enclosureId").equals(dbId).count();
+              setSplitterCount(splitters);
+            }
+
+            // Load NAP port count
+            if (nodeType === "nap") {
+              const ports = await db.ports.where("enclosureId").equals(dbId).count();
+              setNapPortCount(ports || 8);
+            }
           }
         }
       } catch (err) {
@@ -256,6 +274,40 @@ export function NodeEditDialog({ nodeId, nodeType, dbId, onClose }: NodeEditDial
                     <option value="pedestal">Pedestal</option>
                     <option value="aerial">Aerial Closure</option>
                   </select>
+                </div>
+              )}
+
+              {/* LCP-specific fields */}
+              {nodeType === "lcp" && (
+                <div className="p-3 bg-orange-50 rounded-lg border border-orange-200">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Splitter Configuration
+                  </label>
+                  <p className="text-sm text-gray-600">
+                    {splitterCount > 0
+                      ? `${splitterCount} splitter(s) configured`
+                      : "No splitters configured yet"}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Use the canvas to manage splitters
+                  </p>
+                </div>
+              )}
+
+              {/* NAP-specific fields */}
+              {nodeType === "nap" && (
+                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Port Configuration
+                  </label>
+                  <p className="text-sm text-gray-600">
+                    {napPortCount > 0
+                      ? `${napPortCount} port(s) configured`
+                      : "No ports configured yet"}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Expand the node on canvas to manage ports
+                  </p>
                 </div>
               )}
             </div>

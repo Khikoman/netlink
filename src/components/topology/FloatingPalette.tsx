@@ -4,7 +4,6 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import {
   Server,
   Box,
-  Link2,
   GitBranch,
   Network,
   X,
@@ -39,8 +38,8 @@ const paletteItems: PaletteItem[] = [
   {
     type: "closure",
     label: "Closure",
-    icon: <Link2 className="w-5 h-5" />,
-    color: "bg-blue-500",
+    icon: <Network className="w-5 h-5" />,
+    color: "bg-purple-500",
     description: "Splice Closure",
   },
   {
