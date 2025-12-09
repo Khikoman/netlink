@@ -20,10 +20,12 @@ import {
   Edit3,
   Trash2,
   Copy,
+  Info,
 } from "lucide-react";
 import { db, toggleEnclosureExpanded } from "@/lib/db";
 import { useLiveQuery } from "dexie-react-hooks";
 import { FIBER_COLORS } from "@/lib/fiberColors";
+import { TrayManager } from "../TrayManager";
 import type { NodeType } from "@/lib/db";
 
 // Handle styles for interactive connection ports
@@ -42,6 +44,8 @@ interface BaseNodeData {
   portCount?: number;
   connectedPorts?: number;
   hasGps?: boolean;
+  gpsLat?: number;
+  gpsLng?: number;
   selected?: boolean;
   dbId?: number;
   nodeType?: NodeType;
@@ -52,6 +56,9 @@ interface BaseNodeData {
   onDelete?: (nodeId: string) => void;
   onDuplicate?: (nodeId: string, nodeType: string) => void;
   onSetLocation?: (nodeId: string, nodeType: string) => void;
+  onInfo?: (nodeId: string, nodeType: string, dbId: number) => void;
+  onManagePorts?: (nodeId: string, nodeType: string, dbId: number) => void;
+  onOpenSpliceMatrix?: (nodeId: string, nodeType: string, dbId: number) => void;
 }
 
 // Color configurations for each node type
@@ -105,7 +112,7 @@ function ExpandableClosureNodeComponent({ data, selected, id }: NodeProps<BaseNo
   const [isExpanded, setIsExpanded] = useState(data.expanded || false);
   const style = nodeStyles[data.type] || nodeStyles.closure;
   // Read callbacks from data prop (passed from TopologyCanvas)
-  const { onAddChild, onEdit, onDelete, onSetLocation } = data;
+  const { onAddChild, onEdit, onDelete, onSetLocation, onInfo, onOpenSpliceMatrix } = data;
 
   // Fetch trays and splices for this closure
   const trays = useLiveQuery(
@@ -155,6 +162,13 @@ function ExpandableClosureNodeComponent({ data, selected, id }: NodeProps<BaseNo
         className="flex items-center gap-1 p-1 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border border-gray-200"
       >
         <button
+          className="p-1.5 rounded-md bg-cyan-500 hover:bg-cyan-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
+          title="Node Info & Fiber Path"
+          onClick={(e) => { e.stopPropagation(); data.dbId && onInfo?.(id, data.type, data.dbId); }}
+        >
+          <Info className="w-3.5 h-3.5" />
+        </button>
+        <button
           className="p-1.5 rounded-md bg-green-500 hover:bg-green-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
           title="Add Child"
           onClick={(e) => { e.stopPropagation(); onAddChild?.(id, data.type); }}
@@ -163,12 +177,19 @@ function ExpandableClosureNodeComponent({ data, selected, id }: NodeProps<BaseNo
           <span className="hidden sm:inline">Add</span>
         </button>
         <button
-          className="p-1.5 rounded-md bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
-          title="Edit Splices"
-          onClick={(e) => { e.stopPropagation(); onEdit?.(id, data.type); }}
+          className="p-1.5 rounded-md bg-purple-500 hover:bg-purple-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
+          title="Open Splice Matrix"
+          onClick={(e) => { e.stopPropagation(); data.dbId && onOpenSpliceMatrix?.(id, data.type, data.dbId); }}
         >
           <Link2 className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">Splices</span>
+        </button>
+        <button
+          className="p-1.5 rounded-md bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
+          title="Edit Node"
+          onClick={(e) => { e.stopPropagation(); onEdit?.(id, data.type); }}
+        >
+          <Edit3 className="w-3.5 h-3.5" />
         </button>
         <button
           className="p-1.5 rounded-md bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
@@ -239,19 +260,17 @@ function ExpandableClosureNodeComponent({ data, selected, id }: NodeProps<BaseNo
         )}
       </div>
 
-      {/* Expanded content - trays and splices */}
-      {isExpanded && (
+      {/* Expanded content - tray manager */}
+      {isExpanded && data.dbId && (
         <div className={`px-4 pb-3 border-t border-purple-200 ${style.expandedBg}`}>
-          <div className="pt-3 space-y-2 max-h-[300px] overflow-y-auto">
-            {trays && trays.length > 0 ? (
-              trays.map((tray) => (
-                <TraySection key={tray.id} trayId={tray.id!} trayNumber={tray.number} />
-              ))
-            ) : (
-              <div className="text-xs text-gray-400 text-center py-2">
-                No trays configured
-              </div>
-            )}
+          <div className="pt-3 max-h-[300px] overflow-y-auto">
+            <TrayManager
+              enclosureId={data.dbId}
+              onOpenSpliceMatrix={(trayId) => {
+                // Open splice matrix via the parent callback
+                data.dbId && onOpenSpliceMatrix?.(id, data.type, data.dbId);
+              }}
+            />
           </div>
         </div>
       )}
@@ -328,7 +347,7 @@ function ExpandableNAPNodeComponent({ data, selected, id }: NodeProps<BaseNodeDa
   const [isExpanded, setIsExpanded] = useState(data.expanded || false);
   const style = nodeStyles[data.type] || nodeStyles.nap;
   // Read callbacks from data prop (passed from TopologyCanvas)
-  const { onAddChild, onEdit, onDelete, onSetLocation } = data;
+  const { onAddChild, onEdit, onDelete, onSetLocation, onInfo, onManagePorts } = data;
 
   // Fetch ports for this NAP
   const ports = useLiveQuery(
@@ -368,6 +387,13 @@ function ExpandableNAPNodeComponent({ data, selected, id }: NodeProps<BaseNodeDa
         className="flex items-center gap-1 p-1 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border border-gray-200"
       >
         <button
+          className="p-1.5 rounded-md bg-cyan-500 hover:bg-cyan-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
+          title="Node Info & Fiber Path"
+          onClick={(e) => { e.stopPropagation(); data.dbId && onInfo?.(id, data.type, data.dbId); }}
+        >
+          <Info className="w-3.5 h-3.5" />
+        </button>
+        <button
           className="p-1.5 rounded-md bg-green-500 hover:bg-green-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
           title="Add Customer"
           onClick={(e) => { e.stopPropagation(); onAddChild?.(id, data.type); }}
@@ -377,8 +403,8 @@ function ExpandableNAPNodeComponent({ data, selected, id }: NodeProps<BaseNodeDa
         </button>
         <button
           className="p-1.5 rounded-md bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
-          title="Edit Ports"
-          onClick={(e) => { e.stopPropagation(); onEdit?.(id, data.type); }}
+          title="Manage Ports"
+          onClick={(e) => { e.stopPropagation(); data.dbId && onManagePorts?.(id, data.type, data.dbId); }}
         >
           <Edit3 className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">Ports</span>
@@ -526,10 +552,12 @@ function BasicNodeComponent({ data, selected, id }: NodeProps<BaseNodeData>) {
   const showTopHandle = data.type !== "olt";
   const showBottomHandle = data.type !== "nap";
   // Read callbacks from data prop (passed from TopologyCanvas)
-  const { onAddChild, onEdit, onDelete, onDuplicate, onSetLocation } = data;
+  const { onAddChild, onEdit, onDelete, onDuplicate, onSetLocation, onInfo, onOpenSpliceMatrix } = data;
 
   // Determine which child types this node can have
   const canHaveChildren = ["olt", "odf", "closure", "lcp"].includes(data.type);
+  // ODF and LCP can have splices
+  const canHaveSplices = ["odf", "lcp"].includes(data.type);
   // All nodes can be deleted (OLT deletion will cascade to all children)
   const canDelete = true;
 
@@ -549,6 +577,13 @@ function BasicNodeComponent({ data, selected, id }: NodeProps<BaseNodeData>) {
         offset={8}
         className="flex items-center gap-1 p-1 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border border-gray-200"
       >
+        <button
+          className="p-1.5 rounded-md bg-cyan-500 hover:bg-cyan-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
+          title="Node Info & Fiber Path"
+          onClick={(e) => { e.stopPropagation(); data.dbId && onInfo?.(id, data.type, data.dbId); }}
+        >
+          <Info className="w-3.5 h-3.5" />
+        </button>
         {canHaveChildren && (
           <button
             className="p-1.5 rounded-md bg-green-500 hover:bg-green-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
@@ -559,13 +594,22 @@ function BasicNodeComponent({ data, selected, id }: NodeProps<BaseNodeData>) {
             <span className="hidden sm:inline">Add</span>
           </button>
         )}
+        {canHaveSplices && (
+          <button
+            className="p-1.5 rounded-md bg-purple-500 hover:bg-purple-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
+            title={data.type === "odf" ? "Patch Panel" : "Splices"}
+            onClick={(e) => { e.stopPropagation(); data.dbId && onOpenSpliceMatrix?.(id, data.type, data.dbId); }}
+          >
+            <Link2 className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{data.type === "odf" ? "Patch" : "Splices"}</span>
+          </button>
+        )}
         <button
           className="p-1.5 rounded-md bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
           title="Edit"
           onClick={(e) => { e.stopPropagation(); onEdit?.(id, data.type); }}
         >
           <Edit3 className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Edit</span>
         </button>
         <button
           className="p-1.5 rounded-md bg-gray-500 hover:bg-gray-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"

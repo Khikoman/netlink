@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback, memo } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, createOLT, updateOLT, createEnclosure, updateEnclosure, createPort, createTray, createSplitter } from "@/lib/db";
 import LocationPicker from "@/components/map/LocationPicker";
@@ -134,59 +134,80 @@ export default function UnifiedHierarchyBrowser({ projectId: propProjectId }: Un
   // Check for legacy LCPs (directly under OLT without closure)
   const hasLegacyLCPs = (legacyLCPs?.length || 0) > 0;
 
-  // Navigation handlers
-  const selectOLT = (oltId: number) => {
+  // Navigation handlers - memoized with useCallback
+  const selectOLT = useCallback((oltId: number) => {
     setState({ selectedOLTId: oltId, selectedClosureId: null, selectedLCPId: null, selectedNAPId: null });
-  };
+  }, []);
 
-  const selectClosure = (closureId: number) => {
+  const selectClosure = useCallback((closureId: number) => {
     setState((prev) => ({ ...prev, selectedClosureId: closureId, selectedLCPId: null, selectedNAPId: null }));
-  };
+  }, []);
 
-  const selectLCP = (lcpId: number) => {
+  const selectLCP = useCallback((lcpId: number) => {
     setState((prev) => ({ ...prev, selectedLCPId: lcpId, selectedNAPId: null }));
-  };
+  }, []);
 
-  const selectNAP = (napId: number) => {
+  const selectNAP = useCallback((napId: number) => {
     setState((prev) => ({ ...prev, selectedNAPId: napId }));
-  };
+  }, []);
 
-  const resetToRoot = () => {
+  const resetToRoot = useCallback(() => {
     setState({ selectedOLTId: null, selectedClosureId: null, selectedLCPId: null, selectedNAPId: null });
-  };
+  }, []);
 
-  const resetToClosure = () => {
+  const resetToClosure = useCallback(() => {
     setState((prev) => ({ ...prev, selectedClosureId: null, selectedLCPId: null, selectedNAPId: null }));
-  };
+  }, []);
 
-  const resetToLCP = () => {
+  const resetToLCP = useCallback(() => {
     setState((prev) => ({ ...prev, selectedLCPId: null, selectedNAPId: null }));
-  };
+  }, []);
 
-  const resetToNAP = () => {
+  const resetToNAP = useCallback(() => {
     setState((prev) => ({ ...prev, selectedNAPId: null }));
-  };
+  }, []);
 
-  // Edit handlers
-  const startEditOLT = (olt: OLT) => {
+  // Edit handlers - memoized with useCallback
+  const startEditOLT = useCallback((olt: OLT) => {
     setEditingOLT(olt);
     setShowOLTForm(true);
-  };
+  }, []);
 
-  const startEditClosure = (closure: Enclosure) => {
+  const startEditClosure = useCallback((closure: Enclosure) => {
     setEditingClosure(closure);
     setShowClosureForm(true);
-  };
+  }, []);
 
-  const startEditLCP = (lcp: Enclosure) => {
+  const startEditLCP = useCallback((lcp: Enclosure) => {
     setEditingLCP(lcp);
     setShowLCPForm(true);
-  };
+  }, []);
 
-  const startEditNAP = (nap: Enclosure) => {
+  const startEditNAP = useCallback((nap: Enclosure) => {
     setEditingNAP(nap);
     setShowNAPForm(true);
-  };
+  }, []);
+
+  // Add handlers - memoized with useCallback
+  const handleAddOLT = useCallback(() => {
+    setEditingOLT(null);
+    setShowOLTForm(true);
+  }, []);
+
+  const handleAddClosure = useCallback(() => {
+    setEditingClosure(null);
+    setShowClosureForm(true);
+  }, []);
+
+  const handleAddLCP = useCallback(() => {
+    setEditingLCP(null);
+    setShowLCPForm(true);
+  }, []);
+
+  const handleAddNAP = useCallback(() => {
+    setEditingNAP(null);
+    setShowNAPForm(true);
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -210,7 +231,7 @@ export default function UnifiedHierarchyBrowser({ projectId: propProjectId }: Un
           selectedId={state.selectedOLTId}
           onSelect={selectOLT}
           onEdit={startEditOLT}
-          onAdd={() => { setEditingOLT(null); setShowOLTForm(true); }}
+          onAdd={handleAddOLT}
           stats={state.selectedOLTId ? oltStats : undefined}
         />
 
@@ -221,7 +242,7 @@ export default function UnifiedHierarchyBrowser({ projectId: propProjectId }: Un
             selectedId={state.selectedClosureId}
             onSelect={selectClosure}
             onEdit={startEditClosure}
-            onAdd={() => { setEditingClosure(null); setShowClosureForm(true); }}
+            onAdd={handleAddClosure}
             stats={state.selectedClosureId ? closureStats : undefined}
             oltName={selectedOLT?.name}
             hasLegacyLCPs={hasLegacyLCPs}
@@ -235,7 +256,7 @@ export default function UnifiedHierarchyBrowser({ projectId: propProjectId }: Un
             selectedId={state.selectedLCPId}
             onSelect={selectLCP}
             onEdit={startEditLCP}
-            onAdd={() => { setEditingLCP(null); setShowLCPForm(true); }}
+            onAdd={handleAddLCP}
             stats={state.selectedLCPId ? lcpStats : undefined}
             parentName={selectedClosure?.name}
           />
@@ -248,7 +269,7 @@ export default function UnifiedHierarchyBrowser({ projectId: propProjectId }: Un
             selectedId={state.selectedNAPId}
             onSelect={selectNAP}
             onEdit={startEditNAP}
-            onAdd={() => { setEditingNAP(null); setShowNAPForm(true); }}
+            onAdd={handleAddNAP}
             stats={state.selectedNAPId ? napStats : undefined}
             lcpName={selectedLCP?.name}
           />
@@ -489,10 +510,10 @@ function HierarchyBreadcrumb({
 }
 
 // ============================================
-// OLT Panel Component
+// OLT Panel Component (Memoized for performance)
 // ============================================
 
-function OLTPanel({
+const OLTPanel = memo(function OLTPanel({
   olts,
   selectedId,
   onSelect,
@@ -596,13 +617,13 @@ function OLTPanel({
       </div>
     </div>
   );
-}
+});
 
 // ============================================
-// Closure Panel Component
+// Closure Panel Component (Memoized for performance)
 // ============================================
 
-function ClosurePanel({
+const ClosurePanel = memo(function ClosurePanel({
   closures,
   selectedId,
   onSelect,
@@ -716,13 +737,13 @@ function ClosurePanel({
       </div>
     </div>
   );
-}
+});
 
 // ============================================
-// LCP Panel Component
+// LCP Panel Component (Memoized for performance)
 // ============================================
 
-function LCPPanel({
+const LCPPanel = memo(function LCPPanel({
   lcps,
   selectedId,
   onSelect,
@@ -832,13 +853,13 @@ function LCPPanel({
       </div>
     </div>
   );
-}
+});
 
 // ============================================
-// NAP Panel Component
+// NAP Panel Component (Memoized for performance)
 // ============================================
 
-function NAPPanel({
+const NAPPanel = memo(function NAPPanel({
   naps,
   selectedId,
   onSelect,
@@ -941,7 +962,7 @@ function NAPPanel({
       </div>
     </div>
   );
-}
+});
 
 // ============================================
 // Closure Contents Detail Component

@@ -50,16 +50,14 @@ export default function InventoryList() {
   const [usageProjectId, setUsageProjectId] = useState<number | null>(null);
   const [usageNotes, setUsageNotes] = useState("");
 
-  // Get inventory data
-  const inventory = useLiveQuery(async () => {
-    let items = await db.inventory.toArray();
+  // Get inventory data - single optimized query
+  const inventoryData = useLiveQuery(async () => {
+    // Use indexed query when filtering by category
+    let items = selectedCategory === "all"
+      ? await db.inventory.toArray()
+      : await db.inventory.where("category").equals(selectedCategory).toArray();
 
-    // Filter by category
-    if (selectedCategory !== "all") {
-      items = items.filter((item) => item.category === selectedCategory);
-    }
-
-    // Filter by search
+    // Filter by search (must be done in JS for fuzzy matching)
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       items = items.filter(
@@ -70,14 +68,15 @@ export default function InventoryList() {
       );
     }
 
-    return items;
+    // Calculate low stock from the same data set
+    const lowStock = items.filter((item) => item.quantity <= item.minStock);
+
+    return { items, lowStock };
   }, [selectedCategory, searchQuery]);
 
-  // Get low stock items
-  const lowStockItems = useLiveQuery(async () => {
-    const items = await db.inventory.toArray();
-    return items.filter((item) => item.quantity <= item.minStock);
-  }, []);
+  // Extract data with fallbacks
+  const inventory = inventoryData?.items ?? [];
+  const lowStockItems = inventoryData?.lowStock ?? [];
 
   // Get projects for usage logging
   const projects = useProjects();

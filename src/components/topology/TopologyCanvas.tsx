@@ -53,9 +53,14 @@ import { fiberEdgeTypes } from "./edges/FiberEdge";
 import { getLayoutedElements } from "@/lib/topology/layoutUtils";
 import { FloatingPalette } from "./FloatingPalette";
 import { FloatingSplicePanel } from "./FloatingSplicePanel";
-import LocationPicker from "@/components/map/LocationPicker";
 import { useUndoRedo, createCommand } from "@/hooks/useUndoRedo";
-import { NodeEditDialog } from "./NodeEditDialog";
+import { FloatingNodeEditor } from "./FloatingNodeEditor";
+import { FloatingGPSPicker } from "./FloatingGPSPicker";
+import { FloatingPortManager } from "./FloatingPortManager";
+import NodeInfoDropdown from "./NodeInfoDropdown";
+import { SpliceMatrixPanel } from "./SpliceMatrixPanel";
+import FiberPathPanel from "./FiberPathPanel";
+import { CableConfigPopover } from "./CableConfigPopover";
 import type { OLT, ODF, Enclosure } from "@/types";
 
 // Combine edge types
@@ -341,6 +346,42 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
   } | null>(null);
   const [editDialog, setEditDialog] = useState<{ nodeId: string; nodeType: string; dbId: number } | null>(null);
   const [gpsDialog, setGpsDialog] = useState<{ nodeId: string; nodeType: string; dbId: number; lat?: number; lng?: number } | null>(null);
+  const [infoDropdown, setInfoDropdown] = useState<{ nodeId: string; nodeType: string; dbId: number; nodeName?: string; gpsLat?: number; gpsLng?: number } | null>(null);
+  // Quick type picker for instant child creation (when multiple types allowed)
+  const [quickTypePicker, setQuickTypePicker] = useState<{
+    parentId: string;
+    parentType: string;
+    allowedTypes: string[];
+    position: { x: number; y: number };
+  } | null>(null);
+  // Port manager for NAP nodes
+  const [portManager, setPortManager] = useState<{
+    napId: number;
+    napName?: string;
+  } | null>(null);
+  // Splice Matrix Panel state
+  const [spliceMatrixPanel, setSpliceMatrixPanel] = useState<{
+    closureId: number;
+    closureName: string;
+    trayId: number;
+    cableA: { id: number; name: string; fiberCount: number };
+    cableB: { id: number; name: string; fiberCount: number };
+    existingConnections: Array<{ fiberA: number; fiberB: number; status: "completed" | "pending" }>;
+  } | null>(null);
+  // Fiber Path Panel state
+  const [fiberPathPanel, setFiberPathPanel] = useState<{
+    startNodeId: string;
+    startNodeType: string;
+    startDbId: number;
+    startFiber?: number;
+  } | null>(null);
+  // Highlighted path nodes (for fiber path tracing)
+  const [highlightedNodes, setHighlightedNodes] = useState<Set<string>>(new Set());
+  // Cable config popover state
+  const [cableConfigPanel, setCableConfigPanel] = useState<{
+    edgeId: string;
+    config: { name: string; fiberCount: number; length?: number };
+  } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
 
@@ -652,7 +693,97 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     }
   };
 
-  // Handle add child
+  // Generate auto-name for new node based on existing counts
+  const generateAutoName = useCallback((type: string): string => {
+    const prefix = type.toUpperCase();
+    if (type === "odf") {
+      const count = odfs?.length || 0;
+      return `${prefix}-${count + 1}`;
+    }
+    // For enclosures (closure, lcp, nap)
+    const typeMapping: Record<string, string[]> = {
+      "closure": ["splice-closure", "closure"],
+      "lcp": ["lcp", "fdt"],
+      "nap": ["nap", "fat"],
+    };
+    const matchTypes = typeMapping[type] || [type];
+    const count = enclosures?.filter(e => matchTypes.includes(e.type))?.length || 0;
+    return `${prefix}-${count + 1}`;
+  }, [odfs, enclosures]);
+
+  // Instant create node with auto-name, then open editor
+  const instantCreateNode = useCallback(async (
+    parentId: string,
+    parentType: string,
+    childType: string
+  ) => {
+    if (!projectId) return null;
+
+    const parentParts = parentId.split("-");
+    const parentDbId = parseInt(parentParts[parentParts.length - 1]);
+    const autoName = generateAutoName(childType);
+
+    try {
+      let newDbId: number | undefined;
+
+      if (childType === "odf") {
+        newDbId = await db.odfs.add({
+          projectId,
+          oltId: parentDbId,
+          name: autoName,
+          portCount: 48,
+          createdAt: new Date(),
+        }) as number;
+      } else if (childType === "closure") {
+        const dbParentType = parentType === "odf" ? "odf" :
+                            parentType === "olt" ? "olt" : "closure";
+        newDbId = await db.enclosures.add({
+          projectId,
+          name: autoName,
+          type: "splice-closure",
+          parentType: dbParentType as "odf" | "olt" | "closure",
+          parentId: parentDbId,
+          createdAt: new Date(),
+        }) as number;
+      } else if (childType === "lcp") {
+        const dbParentType = parentType === "olt" ? "olt" : "closure";
+        newDbId = await db.enclosures.add({
+          projectId,
+          name: autoName,
+          type: "lcp",
+          parentType: dbParentType as "olt" | "closure",
+          parentId: parentDbId,
+          createdAt: new Date(),
+        }) as number;
+      } else if (childType === "nap") {
+        newDbId = await db.enclosures.add({
+          projectId,
+          name: autoName,
+          type: "nap",
+          parentType: "lcp",
+          parentId: parentDbId,
+          createdAt: new Date(),
+        }) as number;
+      }
+
+      if (newDbId) {
+        // Open the editor for the newly created node
+        const nodeType = childType === "closure" ? "closure" : childType;
+        setEditDialog({
+          nodeId: `${nodeType}-${newDbId}`,
+          nodeType,
+          dbId: newDbId
+        });
+        return newDbId;
+      }
+    } catch (err) {
+      console.error("Failed to create node:", err);
+      alert("Failed to create node");
+    }
+    return null;
+  }, [projectId, generateAutoName]);
+
+  // Handle add child from context menu - use instant creation
   const handleAddChild = () => {
     if (!contextMenu) return;
     const allowedTypes = getAllowedChildTypes(contextMenu.nodeType);
@@ -660,13 +791,21 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
       alert("This node type cannot have children");
       return;
     }
-    setAddDialog({
+
+    // If only one type allowed, create instantly
+    if (allowedTypes.length === 1) {
+      instantCreateNode(contextMenu.nodeId, contextMenu.nodeType, allowedTypes[0]);
+      setContextMenu(null);
+      return;
+    }
+
+    // Multiple types - show quick type picker at context menu position
+    setQuickTypePicker({
       parentId: contextMenu.nodeId,
       parentType: contextMenu.nodeType,
       allowedTypes,
+      position: { x: contextMenu.x, y: contextMenu.y },
     });
-    setNewNodeType(allowedTypes[0]);
-    setNewNodeName("");
     setContextMenu(null);
   };
 
@@ -780,21 +919,33 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
   // NODE ACTION HANDLERS (for NodeActionsContext)
   // =============================================
 
-  // Handle add child from toolbar
-  const handleNodeAddChild = useCallback((nodeId: string, nodeType: string) => {
+  // Handle add child from toolbar - INSTANT creation (no dialog for name)
+  const handleNodeAddChild = useCallback((nodeId: string, nodeType: string, event?: React.MouseEvent) => {
     const allowedTypes = getAllowedChildTypes(nodeType);
     if (allowedTypes.length === 0) {
       alert("This node type cannot have children");
       return;
     }
-    setAddDialog({
+
+    // If only one type allowed, create instantly
+    if (allowedTypes.length === 1) {
+      instantCreateNode(nodeId, nodeType, allowedTypes[0]);
+      return;
+    }
+
+    // Multiple types allowed - show quick type picker
+    // Position near the click or center of screen
+    const position = event
+      ? { x: event.clientX, y: event.clientY }
+      : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+
+    setQuickTypePicker({
       parentId: nodeId,
       parentType: nodeType,
       allowedTypes,
+      position,
     });
-    setNewNodeType(allowedTypes[0]);
-    setNewNodeName("");
-  }, []);
+  }, [instantCreateNode]);
 
   // Handle edit from toolbar
   const handleNodeEdit = useCallback((nodeId: string, nodeType: string) => {
@@ -813,32 +964,6 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
       performDelete(nodeId);
     }
   }, [countChildren, performDelete]);
-
-  // Handle keyboard shortcuts (Delete key)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't handle if dialog is open or if in an input field
-      if (editDialog || addDialog || gpsDialog || deleteConfirm) return;
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-
-      // Delete or Backspace to delete selected node(s)
-      if (e.key === "Delete" || e.key === "Backspace") {
-        // Get all selected nodes (including OLTs)
-        const selectedNodes = nodes.filter((n) => n.selected);
-
-        if (selectedNodes.length > 0) {
-          e.preventDefault();
-          // Delete each selected node
-          for (const node of selectedNodes) {
-            handleNodeDelete(node.id);
-          }
-        }
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [nodes, editDialog, addDialog, gpsDialog, deleteConfirm, handleNodeDelete]);
 
   // Handle duplicate from toolbar
   const handleNodeDuplicate = useCallback(async (nodeId: string, nodeType: string) => {
@@ -922,6 +1047,190 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     setGpsDialog({ nodeId, nodeType, dbId, lat, lng });
   }, []);
 
+  // Handle node info button click - opens info dropdown
+  const handleNodeInfo = useCallback(async (nodeId: string, nodeType: string, dbId: number) => {
+    // Fetch node details including GPS and name
+    let nodeName: string | undefined;
+    let gpsLat: number | undefined;
+    let gpsLng: number | undefined;
+
+    try {
+      if (nodeType === "olt") {
+        const olt = await db.olts.get(dbId);
+        nodeName = olt?.name;
+        gpsLat = olt?.gpsLat;
+        gpsLng = olt?.gpsLng;
+      } else if (nodeType === "odf") {
+        const odf = await db.odfs.get(dbId);
+        nodeName = odf?.name;
+        gpsLat = odf?.gpsLat;
+        gpsLng = odf?.gpsLng;
+      } else {
+        const enclosure = await db.enclosures.get(dbId);
+        nodeName = enclosure?.name;
+        gpsLat = enclosure?.gpsLat;
+        gpsLng = enclosure?.gpsLng;
+      }
+    } catch (err) {
+      console.error("Failed to fetch node info:", err);
+    }
+
+    setInfoDropdown({ nodeId, nodeType, dbId, nodeName, gpsLat, gpsLng });
+  }, []);
+
+  // Handle open port manager for NAP nodes
+  const handleOpenPortManager = useCallback(async (nodeId: string, nodeType: string, dbId: number) => {
+    if (nodeType !== "nap") return;
+
+    try {
+      const enclosure = await db.enclosures.get(dbId);
+      setPortManager({
+        napId: dbId,
+        napName: enclosure?.name,
+      });
+    } catch (err) {
+      console.error("Failed to open port manager:", err);
+    }
+  }, []);
+
+  // Handle open splice matrix for nodes (closure, odf, lcp)
+  const handleOpenSpliceMatrix = useCallback(async (nodeId: string, nodeType: string, dbId: number) => {
+    // Support closures, ODF, and LCP
+    if (!["closure", "odf", "lcp"].includes(nodeType)) return;
+
+    try {
+      let nodeName: string;
+
+      if (nodeType === "odf") {
+        const odf = await db.odfs.get(dbId);
+        if (!odf) return;
+        nodeName = odf.name;
+      } else {
+        const enclosure = await db.enclosures.get(dbId);
+        if (!enclosure) return;
+        nodeName = enclosure.name;
+      }
+
+      // Get trays for this node (closures use enclosureId, odf/lcp use same)
+      const trays = await db.trays.where("enclosureId").equals(dbId).toArray();
+      const tray = trays[0]; // Use first tray or create one if needed
+
+      // Get connected edges to determine cables
+      const incomingEdge = edges.find(e => e.target === nodeId);
+      const outgoingEdge = edges.find(e => e.source === nodeId);
+
+      // Get node names for better labeling
+      const sourceNode = incomingEdge ? nodes.find(n => n.id === incomingEdge.source) : null;
+      const targetNode = outgoingEdge ? nodes.find(n => n.id === outgoingEdge.target) : null;
+
+      // Default cable info (would be enhanced with real cable data)
+      const cableA = {
+        id: incomingEdge ? parseInt(incomingEdge.source.split("-")[1]) : 1,
+        name: incomingEdge?.data?.cable?.name || (sourceNode?.data?.label ? `From ${sourceNode.data.label}` : "Incoming Cable"),
+        fiberCount: incomingEdge?.data?.cable?.fiberCount || 48,
+      };
+      const cableB = {
+        id: outgoingEdge ? parseInt(outgoingEdge.target.split("-")[1]) : 2,
+        name: outgoingEdge?.data?.cable?.name || (targetNode?.data?.label ? `To ${targetNode.data.label}` : "Outgoing Cable"),
+        fiberCount: outgoingEdge?.data?.cable?.fiberCount || 24,
+      };
+
+      // Get existing splices if tray exists
+      let existingConnections: Array<{ fiberA: number; fiberB: number; status: "completed" | "pending" }> = [];
+      if (tray) {
+        const splices = await db.splices.where("trayId").equals(tray.id!).toArray();
+        existingConnections = splices.map(s => ({
+          fiberA: s.fiberA,
+          fiberB: s.fiberB,
+          status: "completed" as const,
+        }));
+      }
+
+      setSpliceMatrixPanel({
+        closureId: dbId,
+        closureName: nodeName,
+        trayId: tray?.id || 0,
+        cableA,
+        cableB,
+        existingConnections,
+      });
+    } catch (err) {
+      console.error("Failed to open splice matrix:", err);
+    }
+  }, [edges, nodes]);
+
+  // Handle save splice matrix connections
+  const handleSaveSpliceMatrix = useCallback(async (connections: Array<{
+    fiberA: number;
+    fiberB: number;
+    tubeA: number;
+    tubeB: number;
+    colorA: string;
+    colorB: string;
+    status: "completed" | "pending";
+  }>) => {
+    if (!spliceMatrixPanel) return;
+
+    try {
+      // Ensure tray exists
+      let trayId = spliceMatrixPanel.trayId;
+      if (!trayId) {
+        trayId = await db.trays.add({
+          enclosureId: spliceMatrixPanel.closureId,
+          number: 1,
+          capacity: 24,
+        }) as number;
+      }
+
+      // Clear existing splices for this tray
+      await db.splices.where("trayId").equals(trayId).delete();
+
+      // Add new splices
+      for (const conn of connections) {
+        await db.splices.add({
+          trayId,
+          cableAId: spliceMatrixPanel.cableA.id,
+          cableAName: spliceMatrixPanel.cableA.name,
+          fiberA: conn.fiberA,
+          tubeAColor: conn.colorA,
+          fiberAColor: conn.colorA,
+          cableBId: spliceMatrixPanel.cableB.id,
+          cableBName: spliceMatrixPanel.cableB.name,
+          fiberB: conn.fiberB,
+          tubeBColor: conn.colorB,
+          fiberBColor: conn.colorB,
+          status: conn.status === "completed" ? "completed" : "pending",
+          spliceType: "fusion",
+          technicianName: "System",
+          timestamp: new Date(),
+        });
+      }
+
+      setSpliceMatrixPanel(null);
+    } catch (err) {
+      console.error("Failed to save splice matrix:", err);
+    }
+  }, [spliceMatrixPanel]);
+
+  // Handle open fiber path tracer
+  const handleOpenFiberPath = useCallback((nodeId: string, nodeType: string, dbId: number) => {
+    setFiberPathPanel({
+      startNodeId: nodeId,
+      startNodeType: nodeType,
+      startDbId: dbId,
+    });
+  }, []);
+
+  // Handle highlight path on canvas
+  const handleHighlightPath = useCallback((nodeIds: string[]) => {
+    setHighlightedNodes(new Set(nodeIds));
+  }, []);
+
+  // Handle clear path highlight
+  const handleClearHighlight = useCallback(() => {
+    setHighlightedNodes(new Set());
+  }, []);
+
   // Handle open splice editor for an edge
   const handleOpenSpliceEditor = useCallback((edgeId: string) => {
     // Find the edge and extract info
@@ -940,6 +1249,42 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
       connections: edge.data?.connections || [],
     });
   }, [edges, nodes]);
+
+  // Handle open cable config popover for an edge
+  const handleOpenCableConfig = useCallback((edgeId: string) => {
+    const edge = edges.find(e => e.id === edgeId);
+    if (!edge) return;
+
+    setCableConfigPanel({
+      edgeId,
+      config: {
+        name: edge.data?.cable?.name || "Cable",
+        fiberCount: edge.data?.cable?.fiberCount || 48,
+        length: edge.data?.cable?.length,
+      },
+    });
+  }, [edges]);
+
+  // Save cable config
+  const handleSaveCableConfig = useCallback((edgeId: string, config: { name: string; fiberCount: number; length?: number }) => {
+    setEdges(eds => eds.map(e => {
+      if (e.id === edgeId) {
+        return {
+          ...e,
+          data: {
+            ...e.data,
+            cable: {
+              ...e.data?.cable,
+              name: config.name,
+              fiberCount: config.fiberCount,
+              length: config.length,
+            },
+          },
+        };
+      }
+      return e;
+    }));
+  }, [setEdges]);
 
   // Save splice connections
   const handleSaveSplices = useCallback((connections: Array<{
@@ -968,28 +1313,170 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     setSplicePanel(null);
   }, [splicePanel, setEdges]);
 
+  // Handle keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't handle if in an input field
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+      // Escape - close any open panel
+      if (e.key === "Escape") {
+        if (editDialog) { setEditDialog(null); return; }
+        if (gpsDialog) { setGpsDialog(null); return; }
+        if (splicePanel) { setSplicePanel(null); return; }
+        if (infoDropdown) { setInfoDropdown(null); return; }
+        if (quickTypePicker) { setQuickTypePicker(null); return; }
+        if (portManager) { setPortManager(null); return; }
+        if (addDialog) { setAddDialog(null); return; }
+        if (deleteConfirm) { setDeleteConfirm(null); return; }
+        return;
+      }
+
+      // Don't handle other shortcuts if a dialog/panel is open
+      if (editDialog || addDialog || gpsDialog || deleteConfirm || quickTypePicker || portManager) return;
+
+      // Get selected node (for node-specific shortcuts)
+      const selectedNodes = nodes.filter((n) => n.selected);
+      const selectedNode = selectedNodes.length === 1 ? selectedNodes[0] : null;
+
+      // Delete or Backspace to delete selected node(s)
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (selectedNodes.length > 0) {
+          e.preventDefault();
+          for (const node of selectedNodes) {
+            handleNodeDelete(node.id);
+          }
+        }
+        return;
+      }
+
+      // E - Edit selected node
+      if (e.key === "e" || e.key === "E") {
+        if (selectedNode && selectedNode.data.dbId) {
+          e.preventDefault();
+          handleNodeEdit(selectedNode.id, selectedNode.data.type);
+        }
+        return;
+      }
+
+      // G - GPS picker for selected node
+      if (e.key === "g" || e.key === "G") {
+        if (selectedNode && selectedNode.data.dbId) {
+          e.preventDefault();
+          handleNodeSetLocation(selectedNode.id, selectedNode.data.type);
+        }
+        return;
+      }
+
+      // A - Add child to selected node
+      if (e.key === "a" || e.key === "A") {
+        if (selectedNode) {
+          e.preventDefault();
+          handleNodeAddChild(selectedNode.id, selectedNode.data.type);
+        }
+        return;
+      }
+
+      // I - Info dropdown for selected node
+      if (e.key === "i" || e.key === "I") {
+        if (selectedNode && selectedNode.data.dbId) {
+          e.preventDefault();
+          handleNodeInfo(selectedNode.id, selectedNode.data.type, selectedNode.data.dbId);
+        }
+        return;
+      }
+
+      // P - Manage ports (for NAP nodes)
+      if (e.key === "p" || e.key === "P") {
+        if (selectedNode && selectedNode.data.type === "nap" && selectedNode.data.dbId) {
+          e.preventDefault();
+          handleOpenPortManager(selectedNode.id, selectedNode.data.type, selectedNode.data.dbId);
+        }
+        return;
+      }
+
+      // S - Open Splice Matrix (for closure, odf, lcp nodes)
+      if (e.key === "s" || e.key === "S") {
+        if (selectedNode && ["closure", "odf", "lcp"].includes(selectedNode.data.type) && selectedNode.data.dbId) {
+          e.preventDefault();
+          handleOpenSpliceMatrix(selectedNode.id, selectedNode.data.type, selectedNode.data.dbId);
+        }
+        return;
+      }
+
+      // T - Trace fiber path from selected node
+      if (e.key === "t" || e.key === "T") {
+        if (selectedNode && selectedNode.data.dbId) {
+          e.preventDefault();
+          handleOpenFiberPath(selectedNode.id, selectedNode.data.type, selectedNode.data.dbId);
+        }
+        return;
+      }
+
+      // Ctrl/Cmd+Z - Undo
+      if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
+        if (canUndoCommand) {
+          e.preventDefault();
+          undoCommand();
+        }
+        return;
+      }
+
+      // Ctrl/Cmd+Y or Ctrl/Cmd+Shift+Z - Redo
+      if ((e.ctrlKey || e.metaKey) && (e.key === "y" || (e.key === "z" && e.shiftKey))) {
+        if (canRedoCommand) {
+          e.preventDefault();
+          redoCommand();
+        }
+        return;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    nodes, editDialog, addDialog, gpsDialog, deleteConfirm, quickTypePicker, portManager, splicePanel, infoDropdown,
+    handleNodeDelete, handleNodeEdit, handleNodeSetLocation, handleNodeAddChild, handleNodeInfo, handleOpenPortManager,
+    handleOpenSpliceMatrix, handleOpenFiberPath,
+    canUndoCommand, canRedoCommand, undoCommand, redoCommand
+  ]);
+
   // Filter nodes by search AND inject action callbacks into node data
   const filteredNodes = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    return nodes.map((node) => ({
-      ...node,
-      data: {
-        ...node.data,
-        // Inject action callbacks into each node's data
-        onAddChild: handleNodeAddChild,
-        onEdit: handleNodeEdit,
-        onDelete: handleNodeDelete,
-        onDuplicate: handleNodeDuplicate,
-        onSetLocation: handleNodeSetLocation,
-      },
-      style: query
-        ? {
-            ...node.style,
+    const hasHighlight = highlightedNodes.size > 0;
+    return nodes.map((node) => {
+      const isHighlighted = highlightedNodes.has(node.id);
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          // Inject action callbacks into each node's data
+          onAddChild: handleNodeAddChild,
+          onEdit: handleNodeEdit,
+          onDelete: handleNodeDelete,
+          onDuplicate: handleNodeDuplicate,
+          onSetLocation: handleNodeSetLocation,
+          onInfo: handleNodeInfo,
+          onManagePorts: handleOpenPortManager,
+          onOpenSpliceMatrix: handleOpenSpliceMatrix,
+          onTracePath: handleOpenFiberPath,
+          isHighlighted,
+        },
+        style: {
+          ...node.style,
+          // Apply search filter opacity
+          ...(query && {
             opacity: node.data.label.toLowerCase().includes(query) ? 1 : 0.3,
-          }
-        : node.style,
-    }));
-  }, [nodes, searchQuery, handleNodeAddChild, handleNodeEdit, handleNodeDelete, handleNodeDuplicate, handleNodeSetLocation]);
+          }),
+          // Apply path highlight opacity
+          ...(hasHighlight && !isHighlighted && {
+            opacity: 0.3,
+          }),
+        },
+      };
+    });
+  }, [nodes, searchQuery, highlightedNodes, handleNodeAddChild, handleNodeEdit, handleNodeDelete, handleNodeDuplicate, handleNodeSetLocation, handleNodeInfo, handleOpenPortManager, handleOpenSpliceMatrix, handleOpenFiberPath]);
 
   // Inject action callbacks into edge data
   const edgesWithCallbacks = useMemo(() => {
@@ -998,9 +1485,10 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
       data: {
         ...edge.data,
         onOpenSpliceEditor: handleOpenSpliceEditor,
+        onOpenCableConfig: handleOpenCableConfig,
       },
     }));
-  }, [edges, handleOpenSpliceEditor]);
+  }, [edges, handleOpenSpliceEditor, handleOpenCableConfig]);
 
   const typeIcons: Record<string, React.ReactNode> = {
     odf: <Box className="w-4 h-4" />,
@@ -1195,78 +1683,112 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
         />
       )}
 
-      {/* Node Edit Dialog */}
+      {/* Floating Node Editor */}
       {editDialog && (
-        <NodeEditDialog
+        <FloatingNodeEditor
+          isOpen={true}
           nodeId={editDialog.nodeId}
           nodeType={editDialog.nodeType}
           dbId={editDialog.dbId}
           onClose={() => setEditDialog(null)}
+          onOpenGPSPicker={(nodeId, nodeType, dbId) => {
+            setGpsDialog({
+              nodeId,
+              nodeType,
+              dbId,
+              lat: undefined,
+              lng: undefined,
+            });
+          }}
         />
       )}
 
-      {/* GPS Location Dialog */}
+      {/* Floating GPS Picker */}
       {gpsDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold flex items-center gap-2">
-                <MapPin className="w-5 h-5 text-indigo-600" />
-                Set GPS Location
-              </h3>
-              <button
-                onClick={() => setGpsDialog(null)}
-                className="p-1 hover:bg-gray-100 rounded-full"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <p className="text-gray-600 mb-4 text-sm">
-              Setting location for: <span className="font-medium">{gpsDialog.nodeType.toUpperCase()}</span>
-            </p>
+        <FloatingGPSPicker
+          isOpen={true}
+          nodeId={gpsDialog.nodeId}
+          nodeType={gpsDialog.nodeType}
+          dbId={gpsDialog.dbId}
+          initialLat={gpsDialog.lat}
+          initialLng={gpsDialog.lng}
+          onClose={() => setGpsDialog(null)}
+        />
+      )}
 
-            <LocationPicker
-              latitude={gpsDialog.lat}
-              longitude={gpsDialog.lng}
-              onLocationChange={(lat, lng) => {
-                setGpsDialog({ ...gpsDialog, lat, lng });
-              }}
-            />
+      {/* Node Info Dropdown */}
+      {infoDropdown && (
+        <NodeInfoDropdown
+          nodeId={infoDropdown.nodeId}
+          nodeType={infoDropdown.nodeType}
+          dbId={infoDropdown.dbId}
+          isOpen={true}
+          onClose={() => setInfoDropdown(null)}
+          nodeName={infoDropdown.nodeName}
+          gpsLat={infoDropdown.gpsLat}
+          gpsLng={infoDropdown.gpsLng}
+          onOpenGpsDialog={() => {
+            // Open GPS dialog for this node
+            setGpsDialog({
+              nodeId: infoDropdown.nodeId,
+              nodeType: infoDropdown.nodeType,
+              dbId: infoDropdown.dbId,
+              lat: infoDropdown.gpsLat,
+              lng: infoDropdown.gpsLng,
+            });
+          }}
+          position="fixed"
+        />
+      )}
 
-            <div className="flex gap-2 mt-4">
-              <button
-                onClick={() => setGpsDialog(null)}
-                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={async () => {
-                  if (!gpsDialog.lat || !gpsDialog.lng) {
-                    alert("Please set a location first");
-                    return;
-                  }
-                  try {
-                    if (gpsDialog.nodeType === "olt") {
-                      await db.olts.update(gpsDialog.dbId, { gpsLat: gpsDialog.lat, gpsLng: gpsDialog.lng });
-                    } else if (gpsDialog.nodeType === "odf") {
-                      await db.odfs.update(gpsDialog.dbId, { gpsLat: gpsDialog.lat, gpsLng: gpsDialog.lng });
-                    } else {
-                      await db.enclosures.update(gpsDialog.dbId, { gpsLat: gpsDialog.lat, gpsLng: gpsDialog.lng });
-                    }
-                    setGpsDialog(null);
-                  } catch (err) {
-                    console.error("Failed to save GPS location:", err);
-                    alert("Failed to save GPS location");
-                  }
-                }}
-                className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-              >
-                Save Location
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Port Manager for NAP nodes */}
+      {portManager && (
+        <FloatingPortManager
+          isOpen={true}
+          napId={portManager.napId}
+          napName={portManager.napName}
+          onClose={() => setPortManager(null)}
+        />
+      )}
+
+      {/* Splice Matrix Panel */}
+      {spliceMatrixPanel && (
+        <SpliceMatrixPanel
+          isOpen={true}
+          onClose={() => setSpliceMatrixPanel(null)}
+          closureId={spliceMatrixPanel.closureId}
+          closureName={spliceMatrixPanel.closureName}
+          trayId={spliceMatrixPanel.trayId}
+          cableA={spliceMatrixPanel.cableA}
+          cableB={spliceMatrixPanel.cableB}
+          existingConnections={spliceMatrixPanel.existingConnections}
+          onSave={handleSaveSpliceMatrix}
+        />
+      )}
+
+      {/* Fiber Path Panel */}
+      {fiberPathPanel && (
+        <FiberPathPanel
+          isOpen={true}
+          onClose={() => setFiberPathPanel(null)}
+          startNodeId={fiberPathPanel.startNodeId}
+          startNodeType={fiberPathPanel.startNodeType}
+          startDbId={fiberPathPanel.startDbId}
+          startFiber={fiberPathPanel.startFiber}
+          onHighlightPath={handleHighlightPath}
+          onClearHighlight={handleClearHighlight}
+        />
+      )}
+
+      {/* Cable Config Popover */}
+      {cableConfigPanel && (
+        <CableConfigPopover
+          isOpen={true}
+          onClose={() => setCableConfigPanel(null)}
+          edgeId={cableConfigPanel.edgeId}
+          initialConfig={cableConfigPanel.config}
+          onSave={handleSaveCableConfig}
+        />
       )}
 
       {/* Context Menu */}
@@ -1413,6 +1935,46 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
             </div>
           </div>
         </div>
+      )}
+
+      {/* Quick Type Picker (for instant child creation with multiple types) */}
+      {quickTypePicker && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setQuickTypePicker(null)}
+          />
+          {/* Picker popup */}
+          <div
+            className="fixed z-50 bg-white rounded-xl shadow-2xl border border-gray-200 p-2 min-w-[140px]"
+            style={{
+              left: Math.min(quickTypePicker.position.x, window.innerWidth - 160),
+              top: Math.min(quickTypePicker.position.y, window.innerHeight - 200),
+            }}
+          >
+            <p className="text-xs text-gray-500 px-2 py-1 mb-1">Select type:</p>
+            <div className="space-y-1">
+              {quickTypePicker.allowedTypes.map((type) => (
+                <button
+                  key={type}
+                  onClick={() => {
+                    instantCreateNode(
+                      quickTypePicker.parentId,
+                      quickTypePicker.parentType,
+                      type
+                    );
+                    setQuickTypePicker(null);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-blue-50 text-left transition-colors"
+                >
+                  {typeIcons[type] || <Box className="w-4 h-4" />}
+                  <span className="capitalize font-medium text-sm">{type}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

@@ -562,3 +562,221 @@ export function useOtdrTracesBySplice(spliceId: number | undefined) {
     [spliceId]
   );
 }
+
+// ============================================
+// UPSTREAM/DOWNSTREAM CONNECTION HOOKS
+// ============================================
+
+/**
+ * Get upstream connection info for a node (parent, cable, fiber colors)
+ */
+export function useUpstreamConnection(nodeType: string, nodeId: number | undefined) {
+  return useLiveQuery(async () => {
+    if (!nodeId) return null;
+
+    // For ODF - upstream is the OLT
+    if (nodeType === "odf") {
+      const odf = await db.odfs.get(nodeId);
+      if (!odf || !odf.oltId) return null;
+      const olt = await db.olts.get(odf.oltId);
+      return {
+        parentType: "olt",
+        parent: olt,
+        cable: null, // ODF is directly part of OLT cabinet
+      };
+    }
+
+    // For enclosure types (closure, lcp, nap)
+    if (["closure", "splice-closure", "lcp", "fdt", "nap", "fat"].includes(nodeType)) {
+      const enc = await db.enclosures.get(nodeId);
+      if (!enc || !enc.parentId) return null;
+
+      // Get parent based on parentType
+      if (enc.parentType === "olt") {
+        const olt = await db.olts.get(enc.parentId);
+        // Find cable connecting OLT to this enclosure
+        const cable = await db.cables.where("targetEnclosureId").equals(nodeId).first();
+        return { parentType: "olt", parent: olt, cable };
+      } else if (enc.parentType === "odf") {
+        const odf = await db.odfs.get(enc.parentId);
+        // Find ODF port connecting to this enclosure
+        const odfPort = await db.odfPorts.where("enclosureId").equals(nodeId).first();
+        const cable = odfPort ? await db.cables.where("odfPortId").equals(odfPort.id!).first() : null;
+        return { parentType: "odf", parent: odf, cable, odfPort };
+      } else if (enc.parentType === "closure") {
+        const parentClosure = await db.enclosures.get(enc.parentId);
+        const cable = await db.cables.where("targetEnclosureId").equals(nodeId).first();
+        return { parentType: "closure", parent: parentClosure, cable };
+      } else if (enc.parentType === "lcp") {
+        const parentLcp = await db.enclosures.get(enc.parentId);
+        const cable = await db.cables.where("targetEnclosureId").equals(nodeId).first();
+        return { parentType: "lcp", parent: parentLcp, cable };
+      }
+    }
+
+    return null;
+  }, [nodeType, nodeId]);
+}
+
+/**
+ * Get downstream connections for a node (children, cables)
+ */
+export function useDownstreamConnections(nodeType: string, nodeId: number | undefined) {
+  return useLiveQuery(async () => {
+    if (!nodeId) return [];
+
+    // For OLT - downstream includes ODFs and closures
+    if (nodeType === "olt") {
+      const odfs = await db.odfs.where("oltId").equals(nodeId).toArray();
+      const closures = await db.enclosures
+        .where("parentId")
+        .equals(nodeId)
+        .filter((e) => e.parentType === "olt")
+        .toArray();
+
+      const result = [];
+      for (const odf of odfs) {
+        result.push({ type: "odf", item: odf, cable: null });
+      }
+      for (const closure of closures) {
+        const cable = await db.cables.where("targetEnclosureId").equals(closure.id!).first();
+        result.push({ type: closure.type, item: closure, cable });
+      }
+      return result;
+    }
+
+    // For ODF - downstream includes closures connected via ODF ports
+    if (nodeType === "odf") {
+      const ports = await db.odfPorts.where("odfId").equals(nodeId).toArray();
+      const result = [];
+      for (const port of ports) {
+        if (port.closureId) {
+          const enc = await db.enclosures.get(port.closureId);
+          const cable = await db.cables.where("odfPortId").equals(port.id!).first();
+          if (enc) {
+            result.push({ type: enc.type, item: enc, cable, port });
+          }
+        }
+      }
+      return result;
+    }
+
+    // For closures - downstream includes LCPs
+    if (["closure", "splice-closure"].includes(nodeType)) {
+      const lcps = await db.enclosures
+        .where("parentId")
+        .equals(nodeId)
+        .filter((e) => e.parentType === "closure" && (e.type === "lcp" || e.type === "fdt"))
+        .toArray();
+
+      const result = [];
+      for (const lcp of lcps) {
+        const cable = await db.cables.where("targetEnclosureId").equals(lcp.id!).first();
+        result.push({ type: lcp.type, item: lcp, cable });
+      }
+      return result;
+    }
+
+    // For LCP - downstream includes NAPs
+    if (["lcp", "fdt"].includes(nodeType)) {
+      const naps = await db.enclosures
+        .where("parentId")
+        .equals(nodeId)
+        .filter((e) => e.parentType === "lcp" && (e.type === "nap" || e.type === "fat"))
+        .toArray();
+
+      const result = [];
+      for (const nap of naps) {
+        const cable = await db.cables.where("targetEnclosureId").equals(nap.id!).first();
+        result.push({ type: nap.type, item: nap, cable });
+      }
+      return result;
+    }
+
+    // For NAP - downstream includes customer attachments
+    if (["nap", "fat"].includes(nodeType)) {
+      const ports = await db.ports.where("enclosureId").equals(nodeId).toArray();
+      const result = [];
+      for (const port of ports) {
+        if (port.status === "connected" || port.customerName) {
+          result.push({ type: "customer", port, customerName: port.customerName });
+        }
+      }
+      return result;
+    }
+
+    return [];
+  }, [nodeType, nodeId]);
+}
+
+/**
+ * Get splice summary with fiber colors for an enclosure (closure)
+ */
+export function useSpliceSummary(enclosureId: number | undefined) {
+  return useLiveQuery(async () => {
+    if (!enclosureId) return { total: 0, completed: 0, pending: 0, splices: [] };
+
+    const trays = await db.trays.where("enclosureId").equals(enclosureId).toArray();
+    const allSplices: Splice[] = [];
+
+    for (const tray of trays) {
+      const traySplices = await db.splices.where("trayId").equals(tray.id!).toArray();
+      allSplices.push(...traySplices);
+    }
+
+    return {
+      total: allSplices.length,
+      completed: allSplices.filter((s) => s.status === "completed").length,
+      pending: allSplices.filter((s) => s.status === "pending").length,
+      needsReview: allSplices.filter((s) => s.status === "needs-review").length,
+      failed: allSplices.filter((s) => s.status === "failed").length,
+      splices: allSplices.map((s) => ({
+        id: s.id,
+        fiberA: s.fiberA,
+        fiberB: s.fiberB,
+        fiberAColor: s.fiberAColor,
+        fiberBColor: s.fiberBColor,
+        tubeAColor: s.tubeAColor,
+        tubeBColor: s.tubeBColor,
+        status: s.status,
+        loss: s.loss,
+      })),
+    };
+  }, [enclosureId]);
+}
+
+/**
+ * Get fiber path info for a cable connection
+ */
+export function useFiberPath(cableId: number | undefined) {
+  return useLiveQuery(async () => {
+    if (!cableId) return null;
+
+    const cable = await db.cables.get(cableId);
+    if (!cable) return null;
+
+    // Get splices associated with this cable
+    const splicesA = await db.splices.where("cableAId").equals(cableId).toArray();
+    const splicesB = await db.splices.where("cableBId").equals(cableId).toArray();
+    const allSplices = [...splicesA, ...splicesB];
+
+    // Collect unique fiber colors used
+    const fiberColors = new Set<string>();
+    const tubeColors = new Set<string>();
+
+    for (const splice of allSplices) {
+      if (splice.fiberAColor) fiberColors.add(splice.fiberAColor);
+      if (splice.fiberBColor) fiberColors.add(splice.fiberBColor);
+      if (splice.tubeAColor) tubeColors.add(splice.tubeAColor);
+      if (splice.tubeBColor) tubeColors.add(splice.tubeBColor);
+    }
+
+    return {
+      cable,
+      fiberCount: cable.fiberCount,
+      spliceCount: allSplices.length,
+      fiberColors: Array.from(fiberColors),
+      tubeColors: Array.from(tubeColors),
+    };
+  }, [cableId]);
+}
