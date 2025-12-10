@@ -22,11 +22,11 @@ import {
   Copy,
   Info,
   Route,
+  Zap,
 } from "lucide-react";
 import { db, toggleEnclosureExpanded } from "@/lib/db";
 import { useLiveQuery } from "dexie-react-hooks";
 import { FIBER_COLORS } from "@/lib/fiberColors";
-import { TrayManager } from "../TrayManager";
 import type { NodeType } from "@/lib/db";
 
 // Handle styles for interactive connection ports
@@ -271,14 +271,13 @@ function ExpandableClosureNodeComponent({ data, selected, id }: NodeProps<BaseNo
         )}
       </div>
 
-      {/* Expanded content - tray manager */}
+      {/* Expanded content - splice summary with button */}
       {isExpanded && data.dbId && (
         <div className={`px-4 pb-3 border-t border-purple-200 ${style.expandedBg}`}>
-          <div className="pt-3 max-h-[300px] overflow-y-auto">
-            <TrayManager
+          <div className="pt-3">
+            <ExpandedSpliceSummary
               enclosureId={data.dbId}
-              onOpenSpliceMatrix={(trayId) => {
-                // Open splice matrix via the parent callback
+              onOpenSpliceEditor={() => {
                 data.dbId && onOpenSpliceMatrix?.(id, data.type, data.dbId);
               }}
             />
@@ -305,6 +304,59 @@ function getColorHex(colorName: string): string {
 }
 
 // Sub-component for tray section
+// Expanded splice summary component - shows splice count and button to open editor
+function ExpandedSpliceSummary({ enclosureId, onOpenSpliceEditor }: { enclosureId: number; onOpenSpliceEditor: () => void }) {
+  const trays = useLiveQuery(
+    () => db.trays.where("enclosureId").equals(enclosureId).toArray(),
+    [enclosureId]
+  );
+
+  const spliceCount = useLiveQuery(
+    async () => {
+      if (!trays || trays.length === 0) return 0;
+      let count = 0;
+      for (const tray of trays) {
+        if (tray.id) {
+          const splices = await db.splices.where("trayId").equals(tray.id).count();
+          count += splices;
+        }
+      }
+      return count;
+    },
+    [trays]
+  );
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="text-xs text-gray-600">
+          <span className="font-medium">{trays?.length || 0}</span> tray{(trays?.length || 0) !== 1 ? "s" : ""} •
+          <span className="font-medium ml-1">{spliceCount || 0}</span> splice{(spliceCount || 0) !== 1 ? "s" : ""}
+        </div>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenSpliceEditor();
+          }}
+          className="px-2 py-1 text-xs bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded transition-colors flex items-center gap-1"
+        >
+          <Zap className="w-3 h-3" />
+          Edit Splices
+        </button>
+      </div>
+      {/* Show first few trays */}
+      {trays?.slice(0, 2).map((tray) => (
+        <TraySection key={tray.id} trayId={tray.id!} trayNumber={tray.number} />
+      ))}
+      {trays && trays.length > 2 && (
+        <div className="text-[10px] text-gray-400 text-center">
+          +{trays.length - 2} more tray{trays.length - 2 !== 1 ? "s" : ""}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TraySection({ trayId, trayNumber }: { trayId: number; trayNumber: number }) {
   const splices = useLiveQuery(
     () => db.splices.where("trayId").equals(trayId).toArray(),

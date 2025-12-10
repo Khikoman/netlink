@@ -19,6 +19,7 @@ import type {
   CustomerAttachment,
   ODF,
   ODFPort,
+  EdgeCable,
 } from "@/types";
 
 // NetLink Database using Dexie.js (IndexedDB wrapper)
@@ -43,6 +44,7 @@ class NetLinkDB extends Dexie {
   customerAttachments!: EntityTable<CustomerAttachment, "id">;
   odfs!: EntityTable<ODF, "id">;
   odfPorts!: EntityTable<ODFPort, "id">;
+  edgeCables!: EntityTable<EdgeCable, "id">;
 
   constructor() {
     super("NetLinkDB");
@@ -193,6 +195,32 @@ class NetLinkDB extends Dexie {
       customerAttachments: "++id, portId, projectId, attachmentType, uploadedAt",
       odfs: "++id, projectId, oltId, name",
       odfPorts: "++id, odfId, portNumber, status, ponPortId, closureId",
+    });
+
+    // Version 8: Add edgeCables junction table for React Flow edge to cable mapping
+    // Replaces the JSON hack of storing edgeId in cables.notes
+    // Allows multiple cables per edge and proper relational queries
+    this.version(8).stores({
+      projects: "++id, name, status, createdAt",
+      enclosures: "++id, projectId, name, type, parentType, parentId, hierarchyLevel, odfPortId",
+      trays: "++id, enclosureId, number",
+      cables: "++id, projectId, name, fiberCount, role",
+      splices: "++id, trayId, edgeId, cableAId, cableBId, fiberA, fiberB, status, timestamp",
+      otdrTraces: "++id, spliceId, wavelength, uploadedAt",
+      inventory: "++id, category, name, partNumber",
+      inventoryUsage: "++id, inventoryId, projectId, date",
+      lossBudgets: "++id, [input.name], createdAt",
+      mapNodes: "++id, projectId, type, enclosureId",
+      mapRoutes: "++id, projectId, fromNodeId, toNodeId, cableId",
+      syncQueue: "++id, table, recordId, synced, timestamp",
+      splitters: "++id, enclosureId, name, type",
+      ports: "++id, enclosureId, splitterId, portNumber, status",
+      olts: "++id, projectId, name",
+      oltPonPorts: "++id, oltId, portNumber, status",
+      customerAttachments: "++id, portId, projectId, attachmentType, uploadedAt",
+      odfs: "++id, projectId, oltId, name",
+      odfPorts: "++id, odfId, portNumber, status, ponPortId, closureId",
+      edgeCables: "++id, edgeId, cableId, &[edgeId+cableId]",
     });
   }
 }
@@ -366,6 +394,8 @@ export async function deleteCable(id: number) {
   // Cascade delete: remove all splices referencing this cable
   await db.splices.where("cableAId").equals(id).delete();
   await db.splices.where("cableBId").equals(id).delete();
+  // Cascade delete: remove edge-cable relationships
+  await db.edgeCables.where("cableId").equals(id).delete();
   return db.cables.delete(id);
 }
 
@@ -1170,6 +1200,68 @@ export async function clearSyncedItems() {
   const items = await db.syncQueue.filter(item => item.synced).toArray();
   const ids = items.map(item => item.id).filter((id): id is number => id !== undefined);
   return db.syncQueue.bulkDelete(ids);
+}
+
+// ============================================
+// EDGE CABLE OPERATIONS (React Flow edge to cable mapping)
+// ============================================
+
+/**
+ * Link a React Flow edge to a cable record
+ */
+export async function createEdgeCable(edgeId: string, cableId: number): Promise<number> {
+  const id = await db.edgeCables.add({ edgeId, cableId });
+  return id as number;
+}
+
+/**
+ * Get all cables linked to a specific edge
+ */
+export async function getCablesByEdge(edgeId: string) {
+  const edgeCables = await db.edgeCables.where("edgeId").equals(edgeId).toArray();
+  const cableIds = edgeCables.map(ec => ec.cableId);
+  if (cableIds.length === 0) return [];
+  return Promise.all(cableIds.map(id => db.cables.get(id))).then(cables =>
+    cables.filter((c): c is Cable => c !== undefined)
+  );
+}
+
+/**
+ * Get all edges linked to a specific cable
+ */
+export async function getEdgesByCable(cableId: number) {
+  return db.edgeCables.where("cableId").equals(cableId).toArray();
+}
+
+/**
+ * Get the edge-cable relationship record
+ */
+export async function getEdgeCable(edgeId: string, cableId: number) {
+  return db.edgeCables
+    .where("[edgeId+cableId]")
+    .equals([edgeId, cableId])
+    .first();
+}
+
+/**
+ * Delete edge-cable relationship
+ */
+export async function deleteEdgeCable(id: number) {
+  return db.edgeCables.delete(id);
+}
+
+/**
+ * Delete all edge-cable relationships for a specific edge
+ */
+export async function deleteEdgeCablesByEdge(edgeId: string) {
+  return db.edgeCables.where("edgeId").equals(edgeId).delete();
+}
+
+/**
+ * Delete all edge-cable relationships for a specific cable
+ */
+export async function deleteEdgeCablesByCable(cableId: number) {
+  return db.edgeCables.where("cableId").equals(cableId).delete();
 }
 
 export default db;

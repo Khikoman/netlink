@@ -100,6 +100,78 @@ export function useCable(id: number | undefined) {
   return useLiveQuery(() => (id ? db.cables.get(id) : undefined), [id]);
 }
 
+/**
+ * Get cables linked to a React Flow edge via the edgeCables junction table
+ * Live query that updates when edge-cable relationships change
+ */
+export function useCablesByEdge(edgeId: string | undefined) {
+  return useLiveQuery(async () => {
+    if (!edgeId) return [];
+
+    // Get edge-cable relationships
+    const edgeCables = await db.edgeCables.where("edgeId").equals(edgeId).toArray();
+
+    if (edgeCables.length === 0) return [];
+
+    // Fetch the actual cable records
+    const cables: Cable[] = [];
+    for (const ec of edgeCables) {
+      const cable = await db.cables.get(ec.cableId);
+      if (cable) {
+        cables.push(cable);
+      }
+    }
+
+    return cables;
+  }, [edgeId]);
+}
+
+/**
+ * Get a single cable for an edge (most edges have one cable)
+ */
+export function useCableByEdge(edgeId: string | undefined) {
+  return useLiveQuery(async () => {
+    if (!edgeId) return undefined;
+
+    const edgeCable = await db.edgeCables.where("edgeId").equals(edgeId).first();
+    if (!edgeCable) return undefined;
+
+    return db.cables.get(edgeCable.cableId);
+  }, [edgeId]);
+}
+
+/**
+ * Get all edge-cable mappings for a project (for bulk loading)
+ */
+export function useEdgeCablesMap(projectId: number | undefined) {
+  return useLiveQuery(async () => {
+    if (!projectId) return new Map<string, Cable[]>();
+
+    // Get all cables for this project
+    const cables = await db.cables.where("projectId").equals(projectId).toArray();
+    const cableMap = new Map<number, Cable>();
+    for (const cable of cables) {
+      if (cable.id) cableMap.set(cable.id, cable);
+    }
+
+    // Get all edge-cable relationships
+    const edgeCables = await db.edgeCables.toArray();
+
+    // Build map of edgeId -> cables
+    const result = new Map<string, Cable[]>();
+    for (const ec of edgeCables) {
+      const cable = cableMap.get(ec.cableId);
+      if (cable) {
+        const existing = result.get(ec.edgeId) || [];
+        existing.push(cable);
+        result.set(ec.edgeId, existing);
+      }
+    }
+
+    return result;
+  }, [projectId]);
+}
+
 // ============================================
 // SPLICE HOOKS
 // ============================================
@@ -209,6 +281,31 @@ export function useSpliceCountByEdge(edgeId: string | undefined) {
     () => (edgeId ? db.splices.where("edgeId").equals(edgeId).count() : 0),
     [edgeId]
   );
+}
+
+/**
+ * Get all splices grouped by edgeId for a project
+ * Returns a Map<edgeId, Splice[]> for efficient edge data merging
+ */
+export function useSplicesByEdgeMap(projectId: number | undefined) {
+  return useLiveQuery(async () => {
+    if (!projectId) return new Map<string, Splice[]>();
+
+    // Get all splices that have an edgeId
+    const allSplices = await db.splices.toArray();
+    const splicesWithEdge = allSplices.filter(s => s.edgeId);
+
+    // Group by edgeId
+    const result = new Map<string, Splice[]>();
+    for (const splice of splicesWithEdge) {
+      if (!splice.edgeId) continue;
+      const existing = result.get(splice.edgeId) || [];
+      existing.push(splice);
+      result.set(splice.edgeId, existing);
+    }
+
+    return result;
+  }, [projectId]);
 }
 
 // ============================================

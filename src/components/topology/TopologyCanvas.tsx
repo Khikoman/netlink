@@ -40,11 +40,13 @@ import {
   Undo2,
   Redo2,
 } from "lucide-react";
-import { db, updateNodePosition, deleteOLT, deleteODF, deleteEnclosure, type NodeType } from "@/lib/db";
+import { db, updateNodePosition, deleteOLT, deleteODF, deleteEnclosure, createEdgeCable, getCablesByEdge, type NodeType } from "@/lib/db";
 import {
   useOLTs,
   useODFs,
   useEnclosures,
+  useEdgeCablesMap,
+  useSplicesByEdgeMap,
 } from "@/lib/db/hooks";
 import { useNetwork } from "@/contexts/NetworkContext";
 import { NodeActionsProvider } from "@/contexts/NodeActionsContext";
@@ -58,7 +60,6 @@ import { FloatingNodeEditor } from "./FloatingNodeEditor";
 import { FloatingGPSPicker } from "./FloatingGPSPicker";
 import { FloatingPortManager } from "./FloatingPortManager";
 import NodeInfoDropdown from "./NodeInfoDropdown";
-import { SpliceMatrixPanel } from "./SpliceMatrixPanel";
 import FiberPathPanel from "./FiberPathPanel";
 import { CableConfigPopover } from "./CableConfigPopover";
 import type { OLT, ODF, Enclosure } from "@/types";
@@ -352,18 +353,6 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     napId: number;
     napName?: string;
   } | null>(null);
-  // Splice Matrix Panel state
-  const [spliceMatrixPanel, setSpliceMatrixPanel] = useState<{
-    closureId: number;
-    closureName: string;
-    trayId: number;
-    nodeId: string;  // Track which node for edge updates
-    incomingEdgeId?: string;  // Track connected edges
-    outgoingEdgeId?: string;
-    cableA: { id: number; name: string; fiberCount: number };
-    cableB: { id: number; name: string; fiberCount: number };
-    existingConnections: Array<{ fiberA: number; fiberB: number; colorA?: string; colorB?: string; status: "completed" | "pending" }>;
-  } | null>(null);
   // Fiber Path Panel state
   const [fiberPathPanel, setFiberPathPanel] = useState<{
     startNodeId: string;
@@ -405,6 +394,11 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
   const olts = useOLTs(projectId);
   const odfs = useODFs(projectId);
   const enclosures = useEnclosures(projectId);
+
+  // Database-driven edge data (Phase 2: Single Source of Truth)
+  // These hooks auto-update when database changes via useLiveQuery
+  const edgeCablesMap = useEdgeCablesMap(projectId);
+  const splicesByEdgeMap = useSplicesByEdgeMap(projectId);
 
   // Build flow data when data changes - callbacks injected in separate useEffect
   useEffect(() => {
@@ -1100,153 +1094,6 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     }
   }, []);
 
-  // Handle open splice matrix for nodes (closure, odf, lcp)
-  const handleOpenSpliceMatrix = useCallback(async (nodeId: string, nodeType: string, dbId: number) => {
-    // Support closures, ODF, and LCP
-    if (!["closure", "odf", "lcp"].includes(nodeType)) return;
-
-    try {
-      let nodeName: string;
-
-      if (nodeType === "odf") {
-        const odf = await db.odfs.get(dbId);
-        if (!odf) return;
-        nodeName = odf.name;
-      } else {
-        const enclosure = await db.enclosures.get(dbId);
-        if (!enclosure) return;
-        nodeName = enclosure.name;
-      }
-
-      // Get trays for this node (closures use enclosureId, odf/lcp use same)
-      const trays = await db.trays.where("enclosureId").equals(dbId).toArray();
-      const tray = trays[0]; // Use first tray or create one if needed
-
-      // Get connected edges to determine cables
-      const incomingEdge = edges.find(e => e.target === nodeId);
-      const outgoingEdge = edges.find(e => e.source === nodeId);
-
-      // Get node names for better labeling
-      const sourceNode = incomingEdge ? nodes.find(n => n.id === incomingEdge.source) : null;
-      const targetNode = outgoingEdge ? nodes.find(n => n.id === outgoingEdge.target) : null;
-
-      // Default cable info (would be enhanced with real cable data)
-      const cableA = {
-        id: incomingEdge ? parseInt(incomingEdge.source.split("-")[1]) : 1,
-        name: incomingEdge?.data?.cable?.name || (sourceNode?.data?.label ? `From ${sourceNode.data.label}` : "Incoming Cable"),
-        fiberCount: incomingEdge?.data?.cable?.fiberCount || 48,
-      };
-      const cableB = {
-        id: outgoingEdge ? parseInt(outgoingEdge.target.split("-")[1]) : 2,
-        name: outgoingEdge?.data?.cable?.name || (targetNode?.data?.label ? `To ${targetNode.data.label}` : "Outgoing Cable"),
-        fiberCount: outgoingEdge?.data?.cable?.fiberCount || 24,
-      };
-
-      // Get existing splices if tray exists
-      let existingConnections: Array<{ fiberA: number; fiberB: number; colorA?: string; colorB?: string; status: "completed" | "pending" }> = [];
-      if (tray) {
-        const splices = await db.splices.where("trayId").equals(tray.id!).toArray();
-        existingConnections = splices.map(s => ({
-          fiberA: s.fiberA,
-          fiberB: s.fiberB,
-          colorA: s.fiberAColor,
-          colorB: s.fiberBColor,
-          status: (s.status as "completed" | "pending") || "completed",
-        }));
-      }
-
-      setSpliceMatrixPanel({
-        closureId: dbId,
-        closureName: nodeName,
-        trayId: tray?.id || 0,
-        nodeId,
-        incomingEdgeId: incomingEdge?.id,
-        outgoingEdgeId: outgoingEdge?.id,
-        cableA,
-        cableB,
-        existingConnections,
-      });
-    } catch (err) {
-      console.error("Failed to open splice matrix:", err);
-    }
-  }, [edges, nodes]);
-
-  // Handle save splice matrix connections
-  const handleSaveSpliceMatrix = useCallback(async (connections: Array<{
-    fiberA: number;
-    fiberB: number;
-    tubeA: number;
-    tubeB: number;
-    colorA: string;
-    colorB: string;
-    status: "completed" | "pending";
-  }>) => {
-    if (!spliceMatrixPanel) return;
-
-    try {
-      // Ensure tray exists
-      let trayId = spliceMatrixPanel.trayId;
-      if (!trayId) {
-        trayId = await db.trays.add({
-          enclosureId: spliceMatrixPanel.closureId,
-          number: 1,
-          capacity: 24,
-        }) as number;
-      }
-
-      // Clear existing splices for this tray
-      await db.splices.where("trayId").equals(trayId).delete();
-
-      // Add new splices
-      for (const conn of connections) {
-        await db.splices.add({
-          trayId,
-          cableAId: spliceMatrixPanel.cableA.id,
-          cableAName: spliceMatrixPanel.cableA.name,
-          fiberA: conn.fiberA,
-          tubeAColor: conn.colorA,
-          fiberAColor: conn.colorA,
-          cableBId: spliceMatrixPanel.cableB.id,
-          cableBName: spliceMatrixPanel.cableB.name,
-          fiberB: conn.fiberB,
-          tubeBColor: conn.colorB,
-          fiberBColor: conn.colorB,
-          status: conn.status === "completed" ? "completed" : "pending",
-          spliceType: "fusion",
-          technicianName: "System",
-          timestamp: new Date(),
-        });
-      }
-
-      // Update edge UI with new splice connections
-      const edgeConnections = connections.map(c => ({
-        fiberA: c.fiberA,
-        fiberB: c.fiberB,
-        colorA: c.colorA,
-        colorB: c.colorB,
-        status: c.status,
-      }));
-
-      setEdges(eds => eds.map(e => {
-        // Update both incoming and outgoing edges connected to this node
-        if (e.id === spliceMatrixPanel.incomingEdgeId || e.id === spliceMatrixPanel.outgoingEdgeId) {
-          return {
-            ...e,
-            data: {
-              ...e.data,
-              connections: edgeConnections,
-            },
-          };
-        }
-        return e;
-      }));
-
-      setSpliceMatrixPanel(null);
-    } catch (err) {
-      console.error("Failed to save splice matrix:", err);
-    }
-  }, [spliceMatrixPanel, setEdges]);
-
   // Handle open fiber path tracer
   const handleOpenFiberPath = useCallback((nodeId: string, nodeType: string, dbId: number) => {
     setFiberPathPanel({
@@ -1269,7 +1116,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     setHighlightedPath({ nodeIds: new Set(), edgeIds: new Set() });
   }, []);
 
-  // Handle open splice editor for an edge - finds/creates cables and tray
+  // Handle open splice editor for an edge - finds/creates cables and tray via junction table
   const handleOpenSpliceEditor = useCallback(async (edgeId: string) => {
     if (!projectId) return;
 
@@ -1281,17 +1128,9 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     const targetNode = nodes.find(n => n.id === edge.target);
 
     try {
-      // Find or create cable record for this edge
-      const allCables = await db.cables.where("projectId").equals(projectId).toArray();
-      let cable = allCables.find(c => {
-        if (!c.notes) return false;
-        try {
-          const notesData = JSON.parse(c.notes);
-          return notesData.edgeId === edgeId;
-        } catch {
-          return c.notes === `edge:${edgeId}`;
-        }
-      });
+      // Find or create cable record for this edge via edgeCables junction table
+      const linkedCables = await getCablesByEdge(edgeId);
+      let cable = linkedCables[0];
 
       // Create cable if it doesn't exist
       if (!cable) {
@@ -1302,15 +1141,17 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
           name: cableName,
           fiberCount: fiberCount as 12 | 24 | 48 | 96 | 144 | 216 | 288,
           fiberType: "singlemode",
-          notes: JSON.stringify({ edgeId }),
-        });
+        }) as number;
+
+        // Link via junction table
+        await createEdgeCable(edgeId, cableId);
+
         cable = {
           id: cableId,
           name: cableName,
           fiberCount: fiberCount as 12 | 24 | 48 | 96 | 144 | 216 | 288,
           fiberType: "singlemode",
           projectId,
-          notes: JSON.stringify({ edgeId }),
         };
       }
 
@@ -1365,12 +1206,32 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     }
   }, [edges, nodes, projectId]);
 
-  // Handle open cable config popover for an edge - loads from database
+  // Handle open splice editor from a node - finds connected edge and opens UnifiedSpliceEditor
+  const handleOpenSpliceEditorFromNode = useCallback(async (nodeId: string, nodeType: string, dbId: number) => {
+    // Support closures, ODF, and LCP
+    if (!["closure", "odf", "lcp"].includes(nodeType)) return;
+
+    // Find connected edges - prefer incoming edge (the splice point)
+    const incomingEdge = edges.find(e => e.target === nodeId);
+    const outgoingEdge = edges.find(e => e.source === nodeId);
+
+    // Use incoming edge first, fall back to outgoing
+    const targetEdge = incomingEdge || outgoingEdge;
+
+    if (targetEdge) {
+      // Open the unified splice editor for this edge
+      handleOpenSpliceEditor(targetEdge.id);
+    } else {
+      console.warn("No connected edge found for node:", nodeId);
+    }
+  }, [edges, handleOpenSpliceEditor]);
+
+  // Handle open cable config popover for an edge - loads from database via junction table
   const handleOpenCableConfig = useCallback(async (edgeId: string) => {
     const edge = edges.find(e => e.id === edgeId);
     if (!edge) return;
 
-    // Try to load cable config from database
+    // Try to load cable config from database via edgeCables junction table
     let cableConfig = {
       name: edge.data?.cable?.name || "Cable",
       fiberCount: edge.data?.cable?.fiberCount || 48,
@@ -1378,17 +1239,9 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     };
 
     try {
-      // Find cable record for this edge
-      const cables = await db.cables.where("projectId").equals(projectId!).toArray();
-      const cable = cables.find(c => {
-        if (!c.notes) return false;
-        try {
-          const notesData = JSON.parse(c.notes);
-          return notesData.edgeId === edgeId;
-        } catch {
-          return c.notes === `edge:${edgeId}` || c.notes?.startsWith(`edge:${edgeId}`);
-        }
-      });
+      // Use the edgeCables junction table to find linked cable
+      const linkedCables = await getCablesByEdge(edgeId);
+      const cable = linkedCables[0];
 
       if (cable) {
         cableConfig = {
@@ -1405,80 +1258,45 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
       edgeId,
       config: cableConfig,
     });
-  }, [edges, projectId]);
+  }, [edges]);
 
-  // Save cable config - persists to database
+  // Save cable config - persists to database using edgeCables junction table
   const handleSaveCableConfig = useCallback(async (edgeId: string, config: { name: string; fiberCount: number; length?: number }) => {
+    if (!projectId) return;
+
     try {
-      // Find cable record for this edge
-      const cables = await db.cables.where("projectId").equals(projectId!).toArray();
-      const existingCable = cables.find(c => {
-        if (!c.notes) return false;
-        try {
-          const notesData = JSON.parse(c.notes);
-          return notesData.edgeId === edgeId;
-        } catch {
-          return c.notes === `edge:${edgeId}` || c.notes?.startsWith(`edge:${edgeId}`);
-        }
-      });
+      // Check if this edge already has a cable linked via the edgeCables junction table
+      const linkedCables = await getCablesByEdge(edgeId);
+      const existingCable = linkedCables[0];
 
       if (existingCable?.id) {
-        // Preserve existing splice data when updating
-        const notesData: { edgeId: string; splices?: unknown[] } = { edgeId };
-        try {
-          if (existingCable.notes) {
-            const parsed = JSON.parse(existingCable.notes);
-            if (parsed.splices) {
-              notesData.splices = parsed.splices;
-            }
-          }
-        } catch {
-          // Not JSON, start fresh
-        }
-
-        // Update existing cable
+        // Update existing cable record
         await db.cables.update(existingCable.id, {
           name: config.name,
           fiberCount: config.fiberCount as 12 | 24 | 48 | 96 | 144 | 216 | 288,
           lengthMeters: config.length,
-          notes: JSON.stringify(notesData),
         });
       } else {
-        // Create new cable for this edge
-        await db.cables.add({
-          projectId: projectId!,
+        // Create new cable and link it to this edge via junction table
+        const cableId = await db.cables.add({
+          projectId,
           name: config.name,
           fiberCount: config.fiberCount as 12 | 24 | 48 | 96 | 144 | 216 | 288,
           fiberType: "singlemode",
           lengthMeters: config.length,
-          notes: JSON.stringify({ edgeId }), // Store edgeId in notes field for lookup
-        });
+        }) as number;
+
+        // Create the edge-cable link in junction table
+        await createEdgeCable(edgeId, cableId);
       }
 
-      // Update edge data in React state
-      setEdges(eds => eds.map(e => {
-        if (e.id === edgeId) {
-          return {
-            ...e,
-            data: {
-              ...e.data,
-              cable: {
-                ...e.data?.cable,
-                name: config.name,
-                fiberCount: config.fiberCount,
-                length: config.length,
-              },
-            },
-          };
-        }
-        return e;
-      }));
-
+      // No need to manually update React state - useLiveQuery in useEdgeCablesMap
+      // will automatically trigger re-render with fresh data from database
       setCableConfigPanel(null);
     } catch (err) {
       console.error("Failed to save cable config:", err);
     }
-  }, [setEdges, projectId]);
+  }, [projectId]);
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -1562,11 +1380,11 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
         return;
       }
 
-      // S - Open Splice Matrix (for closure, odf, lcp nodes)
+      // S - Open Splice Editor (for closure, odf, lcp nodes)
       if (e.key === "s" || e.key === "S") {
         if (selectedNode && ["closure", "odf", "lcp"].includes(selectedNode.data.type) && selectedNode.data.dbId) {
           e.preventDefault();
-          handleOpenSpliceMatrix(selectedNode.id, selectedNode.data.type, selectedNode.data.dbId);
+          handleOpenSpliceEditorFromNode(selectedNode.id, selectedNode.data.type, selectedNode.data.dbId);
         }
         return;
       }
@@ -1604,7 +1422,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
   }, [
     nodes, editDialog, addDialog, gpsDialog, deleteConfirm, quickTypePicker, portManager, spliceEditor, infoDropdown,
     handleNodeDelete, handleNodeEdit, handleNodeSetLocation, handleNodeAddChild, handleNodeInfo, handleOpenPortManager,
-    handleOpenSpliceMatrix, handleOpenFiberPath,
+    handleOpenSpliceEditorFromNode, handleOpenFiberPath,
     canUndoCommand, canRedoCommand, undoCommand, redoCommand
   ]);
 
@@ -1626,7 +1444,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
           onSetLocation: handleNodeSetLocation,
           onInfo: handleNodeInfo,
           onManagePorts: handleOpenPortManager,
-          onOpenSpliceMatrix: handleOpenSpliceMatrix,
+          onOpenSpliceMatrix: handleOpenSpliceEditorFromNode,
           onTracePath: handleOpenFiberPath,
           isHighlighted,
         },
@@ -1643,17 +1461,48 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
         },
       };
     });
-  }, [nodes, debouncedSearchQuery, highlightedPath.nodeIds, handleNodeAddChild, handleNodeEdit, handleNodeDelete, handleNodeDuplicate, handleNodeSetLocation, handleNodeInfo, handleOpenPortManager, handleOpenSpliceMatrix, handleOpenFiberPath]);
+  }, [nodes, debouncedSearchQuery, highlightedPath.nodeIds, handleNodeAddChild, handleNodeEdit, handleNodeDelete, handleNodeDuplicate, handleNodeSetLocation, handleNodeInfo, handleOpenPortManager, handleOpenSpliceEditorFromNode, handleOpenFiberPath]);
 
   // Inject action callbacks into edge data AND apply path highlighting
+  // Phase 2: Merge database-driven cable/splice data into edges
   const edgesWithCallbacks = useMemo(() => {
     const hasHighlight = highlightedPath.edgeIds.size > 0;
     return edges.map((edge) => {
       const isHighlighted = highlightedPath.edgeIds.has(edge.id);
+
+      // Get cable data from database (Single Source of Truth)
+      const dbCables = edgeCablesMap?.get(edge.id);
+      const dbCable = dbCables?.[0]; // Primary cable for this edge
+
+      // Get splice data from database and convert to FiberEdge connections format
+      const dbSplices = splicesByEdgeMap?.get(edge.id) || [];
+      const connections = dbSplices.map(splice => ({
+        fiberA: splice.fiberA,
+        fiberB: splice.fiberB,
+        colorA: splice.fiberAColor,
+        colorB: splice.fiberBColor,
+        status: splice.status === "completed" ? "completed" as const
+              : splice.status === "failed" ? "failed" as const
+              : "pending" as const,
+      }));
+
       return {
         ...edge,
         data: {
           ...edge.data,
+          // Database-driven cable info (overrides hardcoded defaults)
+          cable: dbCable
+            ? {
+                name: dbCable.name,
+                fiberCount: dbCable.fiberCount,
+                role: dbCable.role,
+                length: dbCable.lengthMeters,
+              }
+            : edge.data?.cable, // Fallback to hardcoded data if no DB record
+          // Database-driven splice connections
+          connections: connections.length > 0 ? connections : edge.data?.connections,
+          fiberCount: dbCable?.fiberCount || edge.data?.fiberCount || connections.length,
+          // Action callbacks
           onOpenSpliceEditor: handleOpenSpliceEditor,
           onOpenCableConfig: handleOpenCableConfig,
           isHighlighted,
@@ -1668,7 +1517,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
         animated: edge.data?.animated || isHighlighted, // Animate highlighted edges
       };
     });
-  }, [edges, highlightedPath.edgeIds, handleOpenSpliceEditor, handleOpenCableConfig]);
+  }, [edges, highlightedPath.edgeIds, edgeCablesMap, splicesByEdgeMap, handleOpenSpliceEditor, handleOpenCableConfig]);
 
   const typeIcons: Record<string, React.ReactNode> = {
     odf: <Box className="w-4 h-4" />,
@@ -1925,21 +1774,6 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
           napId={portManager.napId}
           napName={portManager.napName}
           onClose={() => setPortManager(null)}
-        />
-      )}
-
-      {/* Splice Matrix Panel */}
-      {spliceMatrixPanel && (
-        <SpliceMatrixPanel
-          isOpen={true}
-          onClose={() => setSpliceMatrixPanel(null)}
-          closureId={spliceMatrixPanel.closureId}
-          closureName={spliceMatrixPanel.closureName}
-          trayId={spliceMatrixPanel.trayId}
-          cableA={spliceMatrixPanel.cableA}
-          cableB={spliceMatrixPanel.cableB}
-          existingConnections={spliceMatrixPanel.existingConnections}
-          onSave={handleSaveSpliceMatrix}
         />
       )}
 

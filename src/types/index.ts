@@ -227,6 +227,15 @@ export interface Cable {
   notes?: string;
 }
 
+// Junction between React Flow edges and database cable records
+export interface EdgeCable {
+  id?: number;
+  edgeId: string; // React Flow edge ID (e.g., "e-olt-1-odf-2")
+  cableId: number; // Foreign key to cables table
+  side?: "source" | "target"; // Optional: which end of the edge this cable is on
+  createdAt?: Date;
+}
+
 export type SpliceType = "fusion" | "mechanical";
 
 export interface Splice {
@@ -444,3 +453,4 @@ export interface CustomerAttachment {
   description?: string;
   uploadedAt: Date;
 }
+
