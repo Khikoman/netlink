@@ -5,7 +5,6 @@ import { db } from "@/lib/db";
 import type { Edge } from "reactflow";
 import type { FiberPath, PathSegment, FiberPathTraceResult, FiberPathNodeType } from "@/types/splice-matrix";
 import { getFiberInfo } from "@/lib/fiberColors";
-import { useNetwork } from "@/contexts/NetworkContext";
 
 interface TraceContext {
   visitedNodes: Set<string>;
@@ -18,8 +17,6 @@ interface TraceContext {
 }
 
 export function useFiberPathTracing() {
-  const { projectId } = useNetwork();
-
   /**
    * Trace fiber path upstream (toward OLT)
    */
@@ -431,7 +428,7 @@ export function useFiberPathTracing() {
         // Build the fiber path result
         const path: FiberPath = {
           id: `path-${Date.now()}`,
-          projectId: projectId || 1,
+          projectId: 1, // Default project, will be overwritten by caller if needed
           startNodeType: ctx.segments[0]?.nodeType || startNodeType,
           startNodeId: ctx.segments[0]?.nodeId || `${startNodeType}-${startDbId}`,
           startDbId: ctx.segments[0]?.dbId || startDbId,
@@ -464,7 +461,7 @@ export function useFiberPathTracing() {
         };
       }
     },
-    [traceUpstream, traceDownstream, projectId]
+    [traceUpstream, traceDownstream]
   );
 
   /**
