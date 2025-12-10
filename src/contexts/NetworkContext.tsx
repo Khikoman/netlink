@@ -127,22 +127,16 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
     setEnclosureId(id);
   }, []);
 
-  // Track previous values for validation (React-recommended pattern)
-  const [prevProjects, setPrevProjects] = useState(projects);
-  const [prevProjectId, setPrevProjectId] = useState(projectId);
-
-  // Validate that selected project still exists (during render, not in effect)
-  if (projects !== prevProjects || projectId !== prevProjectId) {
-    setPrevProjects(projects);
-    setPrevProjectId(projectId);
-    if (isHydrated && projectId && projects.length > 0) {
+  // Validate that selected project still exists (moved to useEffect to avoid render-phase setState)
+  useEffect(() => {
+    if (projectId && projects.length > 0) {
       const exists = projects.some((p) => p.id === projectId);
       if (!exists) {
-        // Project was deleted, clear selection - schedule for next render
-        setTimeout(() => selectProject(null), 0);
+        // Project was deleted, clear selection
+        selectProject(null);
       }
     }
-  }
+  }, [projectId, projects, selectProject]);
 
   const value: NetworkContextValue = {
     projectId,
