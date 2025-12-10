@@ -3,9 +3,6 @@
 import { useState } from "react";
 import dynamic from "next/dynamic";
 import {
-  Home,
-  Wrench,
-  BarChart3,
   Package,
   Map,
   Menu,
@@ -13,11 +10,9 @@ import {
   Zap,
   Network,
   ChevronLeft,
-  Layers,
   Calculator,
   Palette,
   Search,
-  FileSpreadsheet,
   Activity,
   FolderOpen,
 } from "lucide-react";
@@ -36,9 +31,6 @@ import ColorReference from "@/components/fiber/ColorReference";
 import Dashboard from "@/components/Dashboard";
 
 // Dynamically import heavy components to reduce initial bundle
-const SpliceMatrix = dynamic(() => import("@/components/splice/SpliceMatrix"), {
-  loading: () => <CardSkeleton />,
-});
 const LossBudgetCalculator = dynamic(() => import("@/components/analysis/LossBudgetCalculator"), {
   loading: () => <CardSkeleton />,
 });
@@ -52,9 +44,6 @@ const NetworkMap = dynamic(() => import("@/components/map/NetworkMap"), {
   loading: () => <CardSkeleton />,
   ssr: false, // Konva doesn't work with SSR
 });
-const UnifiedHierarchyBrowser = dynamic(() => import("@/components/hierarchy/UnifiedHierarchyBrowser"), {
-  loading: () => <CardSkeleton />,
-});
 const TopologyCanvas = dynamic(() => import("@/components/topology/TopologyCanvas"), {
   loading: () => <CardSkeleton />,
   ssr: false, // React Flow requires client-side rendering
@@ -63,8 +52,6 @@ const TopologyCanvas = dynamic(() => import("@/components/topology/TopologyCanva
 // Tool types for the sidebar
 type Tool =
   | "canvas"
-  | "hierarchy"
-  | "spliceMatrix"
   | "lookup"
   | "reverse"
   | "overview"
@@ -83,8 +70,6 @@ interface ToolConfig {
 
 const tools: ToolConfig[] = [
   { id: "canvas", label: "Topology", icon: <Network className="w-5 h-5" />, category: "network" },
-  { id: "hierarchy", label: "Hierarchy", icon: <Layers className="w-5 h-5" />, category: "network" },
-  { id: "spliceMatrix", label: "Splice Matrix", icon: <FileSpreadsheet className="w-5 h-5" />, category: "network" },
   { id: "lookup", label: "Fiber Lookup", icon: <Search className="w-5 h-5" />, category: "tools" },
   { id: "reverse", label: "Color to #", icon: <Palette className="w-5 h-5" />, category: "tools" },
   { id: "reference", label: "Color Chart", icon: <Palette className="w-5 h-5" />, category: "tools" },
@@ -111,8 +96,6 @@ function HomePageContent() {
   const handleNavigate = (tab: string) => {
     if (tab === "dashboard") {
       clearProject();
-    } else if (tab === "hierarchy") {
-      setActiveTool("hierarchy");
     } else if (tab === "topology") {
       setActiveTool("canvas");
     } else {
@@ -354,8 +337,6 @@ function HomePageContent() {
           {/* Other tools - with padding */}
           {activeTool !== "canvas" && (
             <div className="p-4 md:p-6 max-w-6xl mx-auto">
-              {activeTool === "hierarchy" && <UnifiedHierarchyBrowser projectId={projectId} />}
-              {activeTool === "spliceMatrix" && <SpliceMatrix />}
               {activeTool === "lookup" && <FiberLookup />}
               {activeTool === "reverse" && <ReverseLookup />}
               {activeTool === "overview" && <CableOverview />}
@@ -381,22 +362,22 @@ function HomePageContent() {
           <span className="text-[10px]">Topology</span>
         </button>
         <button
-          onClick={() => setActiveTool("hierarchy")}
+          onClick={() => setActiveTool("lookup")}
           className={`flex flex-col items-center gap-0.5 px-3 py-1 ${
-            activeTool === "hierarchy" ? "text-blue-600" : "text-gray-500"
+            activeTool === "lookup" ? "text-blue-600" : "text-gray-500"
           }`}
         >
-          <Layers className="w-5 h-5" />
-          <span className="text-[10px]">Hierarchy</span>
+          <Search className="w-5 h-5" />
+          <span className="text-[10px]">Fiber</span>
         </button>
         <button
-          onClick={() => setActiveTool("spliceMatrix")}
+          onClick={() => setActiveTool("stock")}
           className={`flex flex-col items-center gap-0.5 px-3 py-1 ${
-            activeTool === "spliceMatrix" ? "text-blue-600" : "text-gray-500"
+            activeTool === "stock" ? "text-blue-600" : "text-gray-500"
           }`}
         >
-          <FileSpreadsheet className="w-5 h-5" />
-          <span className="text-[10px]">Splices</span>
+          <Package className="w-5 h-5" />
+          <span className="text-[10px]">Inventory</span>
         </button>
         <button
           onClick={() => setMobileMenuOpen(true)}

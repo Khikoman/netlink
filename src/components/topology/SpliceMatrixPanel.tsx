@@ -27,6 +27,8 @@ interface SpliceConnection {
 interface ExistingConnection {
   fiberA: number;
   fiberB: number;
+  colorA?: string;
+  colorB?: string;
   status: "completed" | "pending";
 }
 

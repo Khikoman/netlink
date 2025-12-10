@@ -364,9 +364,12 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     closureId: number;
     closureName: string;
     trayId: number;
+    nodeId: string;  // Track which node for edge updates
+    incomingEdgeId?: string;  // Track connected edges
+    outgoingEdgeId?: string;
     cableA: { id: number; name: string; fiberCount: number };
     cableB: { id: number; name: string; fiberCount: number };
-    existingConnections: Array<{ fiberA: number; fiberB: number; status: "completed" | "pending" }>;
+    existingConnections: Array<{ fiberA: number; fiberB: number; colorA?: string; colorB?: string; status: "completed" | "pending" }>;
   } | null>(null);
   // Fiber Path Panel state
   const [fiberPathPanel, setFiberPathPanel] = useState<{
@@ -1136,13 +1139,15 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
       };
 
       // Get existing splices if tray exists
-      let existingConnections: Array<{ fiberA: number; fiberB: number; status: "completed" | "pending" }> = [];
+      let existingConnections: Array<{ fiberA: number; fiberB: number; colorA?: string; colorB?: string; status: "completed" | "pending" }> = [];
       if (tray) {
         const splices = await db.splices.where("trayId").equals(tray.id!).toArray();
         existingConnections = splices.map(s => ({
           fiberA: s.fiberA,
           fiberB: s.fiberB,
-          status: "completed" as const,
+          colorA: s.fiberAColor,
+          colorB: s.fiberBColor,
+          status: (s.status as "completed" | "pending") || "completed",
         }));
       }
 
@@ -1150,6 +1155,9 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
         closureId: dbId,
         closureName: nodeName,
         trayId: tray?.id || 0,
+        nodeId,
+        incomingEdgeId: incomingEdge?.id,
+        outgoingEdgeId: outgoingEdge?.id,
         cableA,
         cableB,
         existingConnections,
@@ -1206,11 +1214,34 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
         });
       }
 
+      // Update edge UI with new splice connections
+      const edgeConnections = connections.map(c => ({
+        fiberA: c.fiberA,
+        fiberB: c.fiberB,
+        colorA: c.colorA,
+        colorB: c.colorB,
+        status: c.status,
+      }));
+
+      setEdges(eds => eds.map(e => {
+        // Update both incoming and outgoing edges connected to this node
+        if (e.id === spliceMatrixPanel.incomingEdgeId || e.id === spliceMatrixPanel.outgoingEdgeId) {
+          return {
+            ...e,
+            data: {
+              ...e.data,
+              connections: edgeConnections,
+            },
+          };
+        }
+        return e;
+      }));
+
       setSpliceMatrixPanel(null);
     } catch (err) {
       console.error("Failed to save splice matrix:", err);
     }
-  }, [spliceMatrixPanel]);
+  }, [spliceMatrixPanel, setEdges]);
 
   // Handle open fiber path tracer
   const handleOpenFiberPath = useCallback((nodeId: string, nodeType: string, dbId: number) => {
@@ -1231,8 +1262,8 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     setHighlightedNodes(new Set());
   }, []);
 
-  // Handle open splice editor for an edge
-  const handleOpenSpliceEditor = useCallback((edgeId: string) => {
+  // Handle open splice editor for an edge - loads from database
+  const handleOpenSpliceEditor = useCallback(async (edgeId: string) => {
     // Find the edge and extract info
     const edge = edges.find(e => e.id === edgeId);
     if (!edge) return;
@@ -1240,54 +1271,174 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     const sourceNode = nodes.find(n => n.id === edge.source);
     const targetNode = nodes.find(n => n.id === edge.target);
 
+    // Try to load existing splice data from database
+    let existingConnections: Array<{
+      fiberA: number;
+      fiberB: number;
+      colorA: string;
+      colorB: string;
+      status: "completed" | "pending" | "failed";
+    }> = [];
+
+    try {
+      // Find cable record for this edge
+      const cables = await db.cables.where("projectId").equals(projectId!).toArray();
+      const cable = cables.find(c => {
+        if (!c.notes) return false;
+        try {
+          const notesData = JSON.parse(c.notes);
+          return notesData.edgeId === edgeId;
+        } catch {
+          return c.notes === `edge:${edgeId}`;
+        }
+      });
+
+      if (cable?.notes) {
+        try {
+          const notesData = JSON.parse(cable.notes);
+          if (notesData.splices && Array.isArray(notesData.splices)) {
+            existingConnections = notesData.splices;
+          }
+        } catch {
+          // Not JSON format, ignore
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load splice data:", err);
+    }
+
+    // Fall back to edge data if no database data
+    if (existingConnections.length === 0 && edge.data?.connections) {
+      existingConnections = edge.data.connections;
+    }
+
     setSplicePanel({
       edgeId,
       cableAName: sourceNode?.data?.label || "Cable A",
       cableBName: targetNode?.data?.label || "Cable B",
       fiberCountA: edge.data?.cable?.fiberCount || 12,
       fiberCountB: edge.data?.cable?.fiberCount || 12,
-      connections: edge.data?.connections || [],
+      connections: existingConnections,
     });
-  }, [edges, nodes]);
+  }, [edges, nodes, projectId]);
 
-  // Handle open cable config popover for an edge
-  const handleOpenCableConfig = useCallback((edgeId: string) => {
+  // Handle open cable config popover for an edge - loads from database
+  const handleOpenCableConfig = useCallback(async (edgeId: string) => {
     const edge = edges.find(e => e.id === edgeId);
     if (!edge) return;
 
-    setCableConfigPanel({
-      edgeId,
-      config: {
-        name: edge.data?.cable?.name || "Cable",
-        fiberCount: edge.data?.cable?.fiberCount || 48,
-        length: edge.data?.cable?.length,
-      },
-    });
-  }, [edges]);
+    // Try to load cable config from database
+    let cableConfig = {
+      name: edge.data?.cable?.name || "Cable",
+      fiberCount: edge.data?.cable?.fiberCount || 48,
+      length: edge.data?.cable?.length,
+    };
 
-  // Save cable config
-  const handleSaveCableConfig = useCallback((edgeId: string, config: { name: string; fiberCount: number; length?: number }) => {
-    setEdges(eds => eds.map(e => {
-      if (e.id === edgeId) {
-        return {
-          ...e,
-          data: {
-            ...e.data,
-            cable: {
-              ...e.data?.cable,
-              name: config.name,
-              fiberCount: config.fiberCount,
-              length: config.length,
-            },
-          },
+    try {
+      // Find cable record for this edge
+      const cables = await db.cables.where("projectId").equals(projectId!).toArray();
+      const cable = cables.find(c => {
+        if (!c.notes) return false;
+        try {
+          const notesData = JSON.parse(c.notes);
+          return notesData.edgeId === edgeId;
+        } catch {
+          return c.notes === `edge:${edgeId}` || c.notes?.startsWith(`edge:${edgeId}`);
+        }
+      });
+
+      if (cable) {
+        cableConfig = {
+          name: cable.name,
+          fiberCount: cable.fiberCount,
+          length: cable.lengthMeters,
         };
       }
-      return e;
-    }));
-  }, [setEdges]);
+    } catch (err) {
+      console.error("Failed to load cable config:", err);
+    }
 
-  // Save splice connections
-  const handleSaveSplices = useCallback((connections: Array<{
+    setCableConfigPanel({
+      edgeId,
+      config: cableConfig,
+    });
+  }, [edges, projectId]);
+
+  // Save cable config - persists to database
+  const handleSaveCableConfig = useCallback(async (edgeId: string, config: { name: string; fiberCount: number; length?: number }) => {
+    try {
+      // Find cable record for this edge
+      const cables = await db.cables.where("projectId").equals(projectId!).toArray();
+      const existingCable = cables.find(c => {
+        if (!c.notes) return false;
+        try {
+          const notesData = JSON.parse(c.notes);
+          return notesData.edgeId === edgeId;
+        } catch {
+          return c.notes === `edge:${edgeId}` || c.notes?.startsWith(`edge:${edgeId}`);
+        }
+      });
+
+      if (existingCable?.id) {
+        // Preserve existing splice data when updating
+        const notesData: { edgeId: string; splices?: unknown[] } = { edgeId };
+        try {
+          if (existingCable.notes) {
+            const parsed = JSON.parse(existingCable.notes);
+            if (parsed.splices) {
+              notesData.splices = parsed.splices;
+            }
+          }
+        } catch {
+          // Not JSON, start fresh
+        }
+
+        // Update existing cable
+        await db.cables.update(existingCable.id, {
+          name: config.name,
+          fiberCount: config.fiberCount as 12 | 24 | 48 | 96 | 144 | 216 | 288,
+          lengthMeters: config.length,
+          notes: JSON.stringify(notesData),
+        });
+      } else {
+        // Create new cable for this edge
+        await db.cables.add({
+          projectId: projectId!,
+          name: config.name,
+          fiberCount: config.fiberCount as 12 | 24 | 48 | 96 | 144 | 216 | 288,
+          fiberType: "singlemode",
+          lengthMeters: config.length,
+          notes: JSON.stringify({ edgeId }), // Store edgeId in notes field for lookup
+        });
+      }
+
+      // Update edge data in React state
+      setEdges(eds => eds.map(e => {
+        if (e.id === edgeId) {
+          return {
+            ...e,
+            data: {
+              ...e.data,
+              cable: {
+                ...e.data?.cable,
+                name: config.name,
+                fiberCount: config.fiberCount,
+                length: config.length,
+              },
+            },
+          };
+        }
+        return e;
+      }));
+
+      setCableConfigPanel(null);
+    } catch (err) {
+      console.error("Failed to save cable config:", err);
+    }
+  }, [setEdges, projectId]);
+
+  // Save splice connections - persists to database
+  const handleSaveSplices = useCallback(async (connections: Array<{
     fiberA: number;
     fiberB: number;
     colorA: string;
@@ -1296,22 +1447,66 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
   }>) => {
     if (!splicePanel) return;
 
-    // Update the edge data with new connections
-    setEdges(eds => eds.map(e => {
-      if (e.id === splicePanel.edgeId) {
-        return {
-          ...e,
-          data: {
-            ...e.data,
-            connections,
-          },
-        };
-      }
-      return e;
-    }));
+    try {
+      // Find cable record for this edge
+      const cables = await db.cables.where("projectId").equals(projectId!).toArray();
+      const cable = cables.find(c => {
+        if (!c.notes) return false;
+        try {
+          const notesData = JSON.parse(c.notes);
+          return notesData.edgeId === splicePanel.edgeId;
+        } catch {
+          return c.notes?.includes(splicePanel.edgeId);
+        }
+      });
 
-    setSplicePanel(null);
-  }, [splicePanel, setEdges]);
+      // Prepare the notes field with edge ID and splice data
+      const notesData = {
+        edgeId: splicePanel.edgeId,
+        splices: connections.map(c => ({
+          fiberA: c.fiberA,
+          fiberB: c.fiberB,
+          colorA: c.colorA,
+          colorB: c.colorB,
+          status: c.status,
+        })),
+      };
+
+      if (cable?.id) {
+        // Update existing cable with splice data
+        await db.cables.update(cable.id, {
+          notes: JSON.stringify(notesData),
+        });
+      } else {
+        // Create new cable for this edge with splice data
+        await db.cables.add({
+          projectId: projectId!,
+          name: splicePanel.cableAName + " → " + splicePanel.cableBName,
+          fiberCount: splicePanel.fiberCountA as 12 | 24 | 48 | 96 | 144 | 216 | 288,
+          fiberType: "singlemode",
+          notes: JSON.stringify(notesData),
+        });
+      }
+
+      // Update the edge data with new connections
+      setEdges(eds => eds.map(e => {
+        if (e.id === splicePanel.edgeId) {
+          return {
+            ...e,
+            data: {
+              ...e.data,
+              connections,
+            },
+          };
+        }
+        return e;
+      }));
+
+      setSplicePanel(null);
+    } catch (err) {
+      console.error("Failed to save splices:", err);
+    }
+  }, [splicePanel, setEdges, projectId]);
 
   // Handle keyboard shortcuts
   useEffect(() => {
