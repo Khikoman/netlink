@@ -33,7 +33,18 @@ export const CableConfigPopover = memo(function CableConfigPopover({
   initialConfig,
   onSave,
 }: CableConfigPopoverProps) {
-  const [position, setPosition] = useState({ x: 300, y: 200 });
+  const [position, setPosition] = useState(() => {
+    if (typeof window === "undefined") return { x: 300, y: 200 };
+    const saved = localStorage.getItem("netlink:cableConfigPosition");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return { x: 300, y: 200 };
+      }
+    }
+    return { x: 300, y: 200 };
+  });
   const [isDragging, setIsDragging] = useState(false);
   const [name, setName] = useState(initialConfig.name);
   const [fiberCount, setFiberCount] = useState(initialConfig.fiberCount);
@@ -41,29 +52,21 @@ export const CableConfigPopover = memo(function CableConfigPopover({
   const dragOffset = useRef({ x: 0, y: 0 });
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // Load position from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem("netlink:cableConfigPosition");
-    if (saved) {
-      try {
-        setPosition(JSON.parse(saved));
-      } catch {
-        // Ignore parse errors
-      }
-    }
-  }, []);
+  // Track previous config to detect prop changes (React-recommended pattern)
+  const [prevConfig, setPrevConfig] = useState(initialConfig);
+
+  // Reset form when config changes (during render, not in effect)
+  if (initialConfig !== prevConfig) {
+    setPrevConfig(initialConfig);
+    setName(initialConfig.name);
+    setFiberCount(initialConfig.fiberCount);
+    setLength(initialConfig.length || 0);
+  }
 
   // Save position to localStorage
   useEffect(() => {
     localStorage.setItem("netlink:cableConfigPosition", JSON.stringify(position));
   }, [position]);
-
-  // Reset form when config changes
-  useEffect(() => {
-    setName(initialConfig.name);
-    setFiberCount(initialConfig.fiberCount);
-    setLength(initialConfig.length || 0);
-  }, [initialConfig]);
 
   // Dragging handlers
   const handleMouseDown = useCallback((e: React.MouseEvent) => {

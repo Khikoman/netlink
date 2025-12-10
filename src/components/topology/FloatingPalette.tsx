@@ -69,24 +69,22 @@ export function FloatingPalette({
   onClose,
   isOpen = true,
 }: FloatingPaletteProps) {
-  const [position, setPosition] = useState({ x: 20, y: 100 });
+  const [position, setPosition] = useState(() => {
+    if (typeof window === "undefined") return { x: 20, y: 100 };
+    const saved = localStorage.getItem("netlink:palettePosition");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return { x: 20, y: 100 };
+      }
+    }
+    return { x: 20, y: 100 };
+  });
   const [isDragging, setIsDragging] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const dragOffset = useRef({ x: 0, y: 0 });
   const panelRef = useRef<HTMLDivElement>(null);
-
-  // Load position from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem("netlink:palettePosition");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        setPosition(parsed);
-      } catch {
-        // Ignore parse errors
-      }
-    }
-  }, []);
 
   // Save position to localStorage
   useEffect(() => {

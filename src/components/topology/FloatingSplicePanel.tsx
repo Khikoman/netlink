@@ -50,7 +50,19 @@ export function FloatingSplicePanel({
   connections: initialConnections,
   onSave,
 }: FloatingSplicePanelProps) {
-  const [position, setPosition] = useState({ x: 200, y: 100 });
+  // Use lazy initializer for localStorage position
+  const [position, setPosition] = useState(() => {
+    if (typeof window === "undefined") return { x: 200, y: 100 };
+    const saved = localStorage.getItem("netlink:splicePanelPosition");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return { x: 200, y: 100 };
+      }
+    }
+    return { x: 200, y: 100 };
+  });
   const [isDragging, setIsDragging] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [connections, setConnections] = useState<FiberConnection[]>(initialConnections);
@@ -63,18 +75,6 @@ export function FloatingSplicePanel({
   useEffect(() => {
     setConnections(initialConnections);
   }, [initialConnections]);
-
-  // Load position from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem("netlink:splicePanelPosition");
-    if (saved) {
-      try {
-        setPosition(JSON.parse(saved));
-      } catch {
-        // Ignore parse errors
-      }
-    }
-  }, []);
 
   // Save position to localStorage
   useEffect(() => {

@@ -96,14 +96,16 @@ function FiberEdgeComponent({
   // Calculate connection summary
   const connectionStats = useMemo(() => {
     if (!data?.connections) return { completed: 0, pending: 0, failed: 0 };
-    return data.connections.reduce(
-      (acc, conn) => {
-        const status = conn.status || "completed";
-        acc[status]++;
-        return acc;
-      },
-      { completed: 0, pending: 0, failed: 0 }
-    );
+    let completed = 0;
+    let pending = 0;
+    let failed = 0;
+    for (const conn of data.connections) {
+      const status = conn.status || "completed";
+      if (status === "completed") completed++;
+      else if (status === "pending") pending++;
+      else if (status === "failed") failed++;
+    }
+    return { completed, pending, failed };
   }, [data?.connections]);
 
   return (

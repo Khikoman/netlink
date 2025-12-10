@@ -230,6 +230,18 @@ When starting work on this project, read these files in order:
 
 NetLink has custom Claude Code agents in `.claude/agents/`. Use them for specialized tasks:
 
+#### Lead Agent
+
+| Agent | When to Use | Invoke With |
+|-------|-------------|-------------|
+| `netlink-architect` | Planning, coordination, task delegation | "Use the netlink-architect to..." |
+
+The **Architect** is the lead agent that coordinates all other agents. Use it for:
+- Creating implementation plans for complex features
+- Breaking down large tasks into smaller agent-assignable work
+- Reviewing and prioritizing bugs and improvements
+- Making architectural decisions
+
 #### Development Agents
 
 | Agent | When to Use | Invoke With |

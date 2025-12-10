@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { CABLE_CONFIGS, getFiberInfo, FIBER_COLORS } from "@/lib/fiberColors";
 import {
   generateBatchSplices,
@@ -14,7 +14,7 @@ import { getTechnicianName, setTechnicianName, getDefaultSpliceType, getDefaultC
 import { HelpTip } from "@/components/ui/HelpTooltip";
 import { AlertCircle, ChevronDown, Layers, FolderOpen, Box } from "lucide-react";
 import { useNetwork } from "@/contexts/NetworkContext";
-import type { Splice, SpliceType, Project, Enclosure, Tray } from "@/types";
+import type { Splice, SpliceType } from "@/types";
 
 export default function SpliceMatrix() {
   // ============ GET PROJECT FROM CONTEXT ============
@@ -23,6 +23,21 @@ export default function SpliceMatrix() {
   // ============ LOCAL ENCLOSURE/TRAY SELECTORS ============
   const [selectedEnclosureId, setSelectedEnclosureId] = useState<number | null>(null);
   const [selectedTrayId, setSelectedTrayId] = useState<number | null>(null);
+
+  // Track previous values for cascading resets (React-recommended pattern)
+  const [prevProjectId, setPrevProjectId] = useState(projectId);
+  const [prevEnclosureId, setPrevEnclosureId] = useState(selectedEnclosureId);
+
+  // Reset child selections when parent changes (during render, not in effect)
+  if (projectId !== prevProjectId) {
+    setPrevProjectId(projectId);
+    setSelectedEnclosureId(null);
+    setSelectedTrayId(null);
+  }
+  if (selectedEnclosureId !== prevEnclosureId) {
+    setPrevEnclosureId(selectedEnclosureId);
+    setSelectedTrayId(null);
+  }
 
   // Get trays for selected enclosure
   const trays = useLiveQuery(
@@ -38,19 +53,19 @@ export default function SpliceMatrix() {
   const selectedEnclosure = enclosures?.find(e => e.id === selectedEnclosureId);
   const selectedTray = trays?.find(t => t.id === selectedTrayId);
 
-  // Cable state
+  // Cable state - use lazy initializer for default values from preferences
   const [cableAName, setCableAName] = useState("Cable A");
-  const [cableACount, setCableACount] = useState(144);
+  const [cableACount, setCableACount] = useState(() => getDefaultCableCount());
   const [cableBName, setCableBName] = useState("Cable B");
-  const [cableBCount, setCableBCount] = useState(144);
+  const [cableBCount, setCableBCount] = useState(() => getDefaultCableCount());
 
-  // Batch splice state
+  // Batch splice state - use lazy initializer for preferences
   const [showBatchModal, setShowBatchModal] = useState(false);
   const [batchStartA, setBatchStartA] = useState(1);
   const [batchStartB, setBatchStartB] = useState(1);
   const [batchCount, setBatchCount] = useState(12);
-  const [batchType, setBatchType] = useState<SpliceType>("fusion");
-  const [technicianName, setTechName] = useState("");
+  const [batchType, setBatchType] = useState<SpliceType>(() => getDefaultSpliceType());
+  const [technicianName, setTechName] = useState(() => getTechnicianName());
 
   // View state
   const [viewTube, setViewTube] = useState<number | null>(null);
@@ -61,25 +76,6 @@ export default function SpliceMatrix() {
     fiberB: number;
     existing?: Splice;
   } | null>(null);
-
-  // Load preferences on mount
-  useEffect(() => {
-    setTechName(getTechnicianName());
-    setBatchType(getDefaultSpliceType());
-    const defaultCount = getDefaultCableCount();
-    setCableACount(defaultCount);
-    setCableBCount(defaultCount);
-  }, []);
-
-  // Clear child selections when parent changes
-  useEffect(() => {
-    setSelectedEnclosureId(null);
-    setSelectedTrayId(null);
-  }, [projectId]);
-
-  useEffect(() => {
-    setSelectedTrayId(null);
-  }, [selectedEnclosureId]);
 
   // Save technician name on change
   const handleTechnicianChange = (name: string) => {

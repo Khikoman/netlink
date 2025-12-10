@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useCallback, useRef, useEffect, memo } from "react";
+import type { Edge } from "reactflow";
 import {
   X,
   GripVertical,
@@ -25,7 +26,7 @@ interface FiberPathPanelProps {
   startNodeType: string;
   startDbId: number;
   startFiber?: number;
-  edges?: any[]; // React Flow edges for path detection
+  edges?: Edge[]; // React Flow edges for path detection
   onHighlightPath: (nodeIds: string[], edgeIds: string[]) => void;
   onClearHighlight: () => void;
 }
@@ -83,7 +84,19 @@ const FiberPathPanel = memo(function FiberPathPanel({
   onHighlightPath,
   onClearHighlight,
 }: FiberPathPanelProps) {
-  const [position, setPosition] = useState({ x: 220, y: 120 });
+  // Use lazy initializer for localStorage position
+  const [position, setPosition] = useState(() => {
+    if (typeof window === "undefined") return { x: 220, y: 120 };
+    const saved = localStorage.getItem("netlink:fiberPathPanelPosition");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return { x: 220, y: 120 };
+      }
+    }
+    return { x: 220, y: 120 };
+  });
   const [isDragging, setIsDragging] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [traceResult, setTraceResult] = useState<FiberPathTraceResult | null>(null);
@@ -94,18 +107,6 @@ const FiberPathPanel = memo(function FiberPathPanel({
   const dragOffset = useRef({ x: 0, y: 0 });
   const panelRef = useRef<HTMLDivElement>(null);
   const { tracePath } = useFiberPathTracing();
-
-  // Load position from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem("netlink:fiberPathPanelPosition");
-    if (saved) {
-      try {
-        setPosition(JSON.parse(saved));
-      } catch {
-        // Ignore parse errors
-      }
-    }
-  }, []);
 
   // Save position to localStorage
   useEffect(() => {

@@ -231,8 +231,19 @@ export const SpliceMatrixPanel = React.memo(function SpliceMatrixPanel({
   existingConnections,
   onSave,
 }: SpliceMatrixPanelProps) {
-  // Panel state
-  const [position, setPosition] = useState({ x: 100, y: 100 });
+  // Panel state - use lazy initializer for localStorage
+  const [position, setPosition] = useState(() => {
+    if (typeof window === "undefined") return { x: 100, y: 100 };
+    const saved = localStorage.getItem("netlink:spliceMatrixPosition");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return { x: 100, y: 100 };
+      }
+    }
+    return { x: 100, y: 100 };
+  });
   const [isDragging, setIsDragging] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const dragOffset = useRef({ x: 0, y: 0 });
@@ -246,25 +257,20 @@ export const SpliceMatrixPanel = React.memo(function SpliceMatrixPanel({
   const [selectedTubeB, setSelectedTubeB] = useState<number | null>(null);
   const [showConnectionList, setShowConnectionList] = useState(false);
 
-  // Load position from localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem("netlink:spliceMatrixPosition");
-    if (saved) {
-      try {
-        setPosition(JSON.parse(saved));
-      } catch {
-        // Ignore parse errors
-      }
-    }
-  }, []);
+  // Track previous props for resetting connections (React-recommended pattern)
+  const [prevExistingConnections, setPrevExistingConnections] = useState(existingConnections);
+  const [prevCableACount, setPrevCableACount] = useState(cableA.fiberCount);
+  const [prevCableBCount, setPrevCableBCount] = useState(cableB.fiberCount);
 
-  // Save position to localStorage
-  useEffect(() => {
-    localStorage.setItem("netlink:spliceMatrixPosition", JSON.stringify(position));
-  }, [position]);
-
-  // Initialize connections from existing
-  useEffect(() => {
+  // Initialize connections from existing props when they change (during render)
+  if (
+    existingConnections !== prevExistingConnections ||
+    cableA.fiberCount !== prevCableACount ||
+    cableB.fiberCount !== prevCableBCount
+  ) {
+    setPrevExistingConnections(existingConnections);
+    setPrevCableACount(cableA.fiberCount);
+    setPrevCableBCount(cableB.fiberCount);
     if (existingConnections.length > 0) {
       const initialConnections = existingConnections.map((conn) => {
         const fiberInfoA = getFiberInfo(conn.fiberA, cableA.fiberCount);
@@ -281,7 +287,12 @@ export const SpliceMatrixPanel = React.memo(function SpliceMatrixPanel({
       });
       setConnections(initialConnections);
     }
-  }, [existingConnections, cableA.fiberCount, cableB.fiberCount]);
+  }
+
+  // Save position to localStorage
+  useEffect(() => {
+    localStorage.setItem("netlink:spliceMatrixPosition", JSON.stringify(position));
+  }, [position]);
 
   // Dragging handlers
   const handleMouseDown = useCallback((e: React.MouseEvent) => {

@@ -372,7 +372,7 @@ export default function NetworkTopologyTree({ projectId }: NetworkTopologyTreePr
         {filteredTree.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
             {searchQuery ? (
-              <p>No results found for "{searchQuery}"</p>
+              <p>No results found for &quot;{searchQuery}&quot;</p>
             ) : (
               <div>
                 <Network className="w-12 h-12 mx-auto text-gray-300 mb-2" />

@@ -308,6 +308,60 @@ export function useFiberPathTracing() {
   );
 
   /**
+   * Helper to build the start segment
+   */
+  const buildStartSegment = async (
+    nodeType: FiberPathNodeType,
+    dbId: number,
+    fiber?: number
+  ): Promise<PathSegment | null> => {
+    let name = "";
+    let actualType = nodeType;
+
+    switch (nodeType) {
+      case "olt": {
+        const olt = await db.olts.get(dbId);
+        name = olt?.name || `OLT-${dbId}`;
+        break;
+      }
+      case "odf": {
+        const odf = await db.odfs.get(dbId);
+        name = odf?.name || `ODF-${dbId}`;
+        break;
+      }
+      default: {
+        const enc = await db.enclosures.get(dbId);
+        if (enc) {
+          name = enc.name || `${enc.type.toUpperCase()}-${dbId}`;
+          actualType = enc.type as FiberPathNodeType;
+        }
+        break;
+      }
+    }
+
+    if (!name) return null;
+
+    const segment: PathSegment = {
+      order: 0,
+      nodeId: `${actualType}-${dbId}`,
+      nodeType: actualType,
+      nodeName: name,
+      dbId,
+    };
+
+    if (fiber) {
+      const fiberInfo = getFiberInfo(fiber, 48);
+      segment.fiberIn = {
+        number: fiber,
+        color: fiberInfo?.fiberColor.name || "Unknown",
+        tube: fiberInfo?.tubeColor.name || "Unknown",
+      };
+    }
+
+    return segment;
+  };
+
+  /**
    * Main trace function - traces from any node bidirectionally
    */
   const tracePath = useCallback(
@@ -409,60 +463,6 @@ export function useFiberPathTracing() {
     },
     [traceUpstream, traceDownstream]
   );
-
-  /**
-   * Helper to build the start segment
-   */
-  const buildStartSegment = async (
-    nodeType: FiberPathNodeType,
-    dbId: number,
-    fiber?: number
-  ): Promise<PathSegment | null> => {
-    let name = "";
-    let actualType = nodeType;
-
-    switch (nodeType) {
-      case "olt": {
-        const olt = await db.olts.get(dbId);
-        name = olt?.name || `OLT-${dbId}`;
-        break;
-      }
-      case "odf": {
-        const odf = await db.odfs.get(dbId);
-        name = odf?.name || `ODF-${dbId}`;
-        break;
-      }
-      default: {
-        const enc = await db.enclosures.get(dbId);
-        if (enc) {
-          name = enc.name || `${enc.type.toUpperCase()}-${dbId}`;
-          actualType = enc.type as FiberPathNodeType;
-        }
-        break;
-      }
-    }
-
-    if (!name) return null;
-
-    const segment: PathSegment = {
-      order: 0,
-      nodeId: `${actualType}-${dbId}`,
-      nodeType: actualType,
-      nodeName: name,
-      dbId,
-    };
-
-    if (fiber) {
-      const fiberInfo = getFiberInfo(fiber, 48);
-      segment.fiberIn = {
-        number: fiber,
-        color: fiberInfo?.fiberColor.name || "Unknown",
-        tube: fiberInfo?.tubeColor.name || "Unknown",
-      };
-    }
-
-    return segment;
-  };
 
   /**
    * Clear path highlight

@@ -52,19 +52,12 @@ function setStoredValue(key: string, value: number | null) {
 }
 
 export function NetworkProvider({ children }: { children: ReactNode }) {
-  // Initialize state from localStorage
-  const [projectId, setProjectId] = useState<number | null>(null);
-  const [oltId, setOltId] = useState<number | null>(null);
-  const [enclosureId, setEnclosureId] = useState<number | null>(null);
-  const [isHydrated, setIsHydrated] = useState(false);
-
-  // Hydrate from localStorage on mount (client-side only)
-  useEffect(() => {
-    setProjectId(getStoredValue(STORAGE_KEYS.projectId));
-    setOltId(getStoredValue(STORAGE_KEYS.oltId));
-    setEnclosureId(getStoredValue(STORAGE_KEYS.enclosureId));
-    setIsHydrated(true);
-  }, []);
+  // Initialize state from localStorage (lazy initialization with SSR safety)
+  const [projectId, setProjectId] = useState<number | null>(() => getStoredValue(STORAGE_KEYS.projectId));
+  const [oltId, setOltId] = useState<number | null>(() => getStoredValue(STORAGE_KEYS.oltId));
+  const [enclosureId, setEnclosureId] = useState<number | null>(() => getStoredValue(STORAGE_KEYS.enclosureId));
+  // Track hydration for SSR - always true after initial render
+  const [isHydrated, setIsHydrated] = useState(() => typeof window !== "undefined");
 
   // Persist selections to localStorage
   useEffect(() => {
@@ -134,16 +127,22 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
     setEnclosureId(id);
   }, []);
 
-  // Validate that selected project still exists
-  useEffect(() => {
+  // Track previous values for validation (React-recommended pattern)
+  const [prevProjects, setPrevProjects] = useState(projects);
+  const [prevProjectId, setPrevProjectId] = useState(projectId);
+
+  // Validate that selected project still exists (during render, not in effect)
+  if (projects !== prevProjects || projectId !== prevProjectId) {
+    setPrevProjects(projects);
+    setPrevProjectId(projectId);
     if (isHydrated && projectId && projects.length > 0) {
       const exists = projects.some((p) => p.id === projectId);
       if (!exists) {
-        // Project was deleted, clear selection
-        selectProject(null);
+        // Project was deleted, clear selection - schedule for next render
+        setTimeout(() => selectProject(null), 0);
       }
     }
-  }, [projects, projectId, isHydrated, selectProject]);
+  }
 
   const value: NetworkContextValue = {
     projectId,
