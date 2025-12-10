@@ -25,6 +25,7 @@ interface FiberEdgeData {
   sourceColor?: string;
   targetColor?: string;
   animated?: boolean;
+  isHighlighted?: boolean;
   cable?: {
     name: string;
     fiberCount: number;
@@ -151,17 +152,17 @@ function FiberEdgeComponent({
         style={{
           ...style,
           stroke: `url(#${gradientId})`,
-          strokeWidth: selected ? 4 : 3,
-          filter: data?.animated ? `url(#glow-animated-${id})` : `url(#glow-${id})`,
-          transition: "stroke-width 0.2s ease",
+          strokeWidth: selected || data?.isHighlighted ? 5 : 3,
+          filter: data?.animated || data?.isHighlighted ? `url(#glow-animated-${id})` : `url(#glow-${id})`,
+          transition: "stroke-width 0.2s ease, filter 0.2s ease",
         }}
         markerEnd={markerEnd}
       />
 
-      {/* Animated flow indicator for active connections */}
-      {data?.animated && (
-        <circle r="4" fill={sourceColor}>
-          <animateMotion dur="2s" repeatCount="indefinite" path={edgePath} />
+      {/* Animated flow indicator for active connections or highlighted paths */}
+      {(data?.animated || data?.isHighlighted) && (
+        <circle r="5" fill={data?.isHighlighted ? "#3b82f6" : sourceColor}>
+          <animateMotion dur={data?.isHighlighted ? "1.5s" : "2s"} repeatCount="indefinite" path={edgePath} />
         </circle>
       )}
 

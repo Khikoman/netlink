@@ -378,8 +378,11 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     startDbId: number;
     startFiber?: number;
   } | null>(null);
-  // Highlighted path nodes (for fiber path tracing)
-  const [highlightedNodes, setHighlightedNodes] = useState<Set<string>>(new Set());
+  // Highlighted path (nodes and edges) for fiber path tracing
+  const [highlightedPath, setHighlightedPath] = useState<{
+    nodeIds: Set<string>;
+    edgeIds: Set<string>;
+  }>({ nodeIds: new Set(), edgeIds: new Set() });
   // Cable config popover state
   const [cableConfigPanel, setCableConfigPanel] = useState<{
     edgeId: string;
@@ -1253,13 +1256,16 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
   }, []);
 
   // Handle highlight path on canvas
-  const handleHighlightPath = useCallback((nodeIds: string[]) => {
-    setHighlightedNodes(new Set(nodeIds));
+  const handleHighlightPath = useCallback((nodeIds: string[], edgeIds: string[]) => {
+    setHighlightedPath({
+      nodeIds: new Set(nodeIds),
+      edgeIds: new Set(edgeIds),
+    });
   }, []);
 
   // Handle clear path highlight
   const handleClearHighlight = useCallback(() => {
-    setHighlightedNodes(new Set());
+    setHighlightedPath({ nodeIds: new Set(), edgeIds: new Set() });
   }, []);
 
   // Handle open splice editor for an edge - loads from database
@@ -1639,9 +1645,9 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
   // Filter nodes by search AND inject action callbacks into node data
   const filteredNodes = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    const hasHighlight = highlightedNodes.size > 0;
+    const hasHighlight = highlightedPath.nodeIds.size > 0;
     return nodes.map((node) => {
-      const isHighlighted = highlightedNodes.has(node.id);
+      const isHighlighted = highlightedPath.nodeIds.has(node.id);
       return {
         ...node,
         data: {
@@ -1671,19 +1677,32 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
         },
       };
     });
-  }, [nodes, searchQuery, highlightedNodes, handleNodeAddChild, handleNodeEdit, handleNodeDelete, handleNodeDuplicate, handleNodeSetLocation, handleNodeInfo, handleOpenPortManager, handleOpenSpliceMatrix, handleOpenFiberPath]);
+  }, [nodes, searchQuery, highlightedPath.nodeIds, handleNodeAddChild, handleNodeEdit, handleNodeDelete, handleNodeDuplicate, handleNodeSetLocation, handleNodeInfo, handleOpenPortManager, handleOpenSpliceMatrix, handleOpenFiberPath]);
 
-  // Inject action callbacks into edge data
+  // Inject action callbacks into edge data AND apply path highlighting
   const edgesWithCallbacks = useMemo(() => {
-    return edges.map((edge) => ({
-      ...edge,
-      data: {
-        ...edge.data,
-        onOpenSpliceEditor: handleOpenSpliceEditor,
-        onOpenCableConfig: handleOpenCableConfig,
-      },
-    }));
-  }, [edges, handleOpenSpliceEditor, handleOpenCableConfig]);
+    const hasHighlight = highlightedPath.edgeIds.size > 0;
+    return edges.map((edge) => {
+      const isHighlighted = highlightedPath.edgeIds.has(edge.id);
+      return {
+        ...edge,
+        data: {
+          ...edge.data,
+          onOpenSpliceEditor: handleOpenSpliceEditor,
+          onOpenCableConfig: handleOpenCableConfig,
+          isHighlighted,
+        },
+        style: {
+          ...edge.style,
+          // Apply path highlight opacity for non-highlighted edges
+          ...(hasHighlight && !isHighlighted && {
+            opacity: 0.3,
+          }),
+        },
+        animated: edge.data?.animated || isHighlighted, // Animate highlighted edges
+      };
+    });
+  }, [edges, highlightedPath.edgeIds, handleOpenSpliceEditor, handleOpenCableConfig]);
 
   const typeIcons: Record<string, React.ReactNode> = {
     odf: <Box className="w-4 h-4" />,
@@ -1970,6 +1989,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
           startNodeType={fiberPathPanel.startNodeType}
           startDbId={fiberPathPanel.startDbId}
           startFiber={fiberPathPanel.startFiber}
+          edges={edges}
           onHighlightPath={handleHighlightPath}
           onClearHighlight={handleClearHighlight}
         />

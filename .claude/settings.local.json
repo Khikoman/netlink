@@ -16,7 +16,20 @@
       "Bash(npm audit:*)",
       "Bash(du -sh:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(npx vercel:*)",
+      "Bash(git push:*)",
+      "Bash(git -C /Users/khikoman/netlink diff --stat)",
+      "Bash(git -C /Users/khikoman/netlink log --oneline -5)",
+      "Bash(grep:*)",
+      "Bash(git -C /Users/khikoman/netlink add src/components/topology/CableConfigPopover.tsx src/components/topology/TrayManager.tsx src/components/topology/TopologyCanvas.tsx src/components/topology/edges/FiberEdge.tsx src/components/topology/nodes/ExpandableNodes.tsx src/components/topology/SpliceMatrixPanel.tsx src/components/topology/FiberPathPanel.tsx src/components/topology/FloatingGPSPicker.tsx src/components/topology/FloatingNodeEditor.tsx src/components/topology/FloatingPortManager.tsx src/components/topology/NodeInfoDropdown.tsx src/hooks/useFiberPathTracing.ts src/types/splice-matrix.ts src/lib/db/hooks.ts src/components/hierarchy/UnifiedHierarchyBrowser.tsx src/components/inventory/InventoryList.tsx)",
+      "Bash(git -C /Users/khikoman/netlink commit -m \"$(cat <<''EOF''\nfeat: Canvas-centric splice editing with cable config and tray manager\n\n- Fix Connect/Match buttons stale closure bug in SpliceMatrixPanel\n- Add Edit Splices button to FiberEdge labels (always visible)\n- Add Splices button to Closure, ODF, and LCP node toolbars\n- Create CableConfigPopover for configuring cable name, fiber count, length\n- Create TrayManager component for inline tray management in closures\n- Make cable name clickable on edges to open cable config\n- Extend splice matrix support to ODF and LCP nodes (not just closures)\n- Add keyboard shortcut ''S'' for splice matrix on ODF/LCP/Closure nodes\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git -C /Users/khikoman/netlink push origin main)",
+      "Bash(git -C /Users/khikoman/netlink add src/app/page.tsx src/components/topology/SpliceMatrixPanel.tsx src/components/topology/TopologyCanvas.tsx)",
+      "Bash(git -C /Users/khikoman/netlink commit -m \"$(cat <<''EOF''\nfix: Data persistence for splices and cable config + cleanup\n\n- Remove redundant Hierarchy and Splice Matrix sidebar tabs\n- Fix edge splice connections persisting to database (was React state only)\n- Fix cable config persisting to database (was React state only)\n- Load splice/cable data from database when opening editors\n- Fix hardcoded splice status - now uses actual DB value\n- Update edge UI immediately after splice matrix save\n- Add nodeId and edge tracking to splice matrix panel state\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git -C /Users/khikoman/netlink log --oneline -10)",
+      "Bash(git -C /Users/khikoman/netlink add:*)",
+      "Bash(git -C /Users/khikoman/netlink commit -m \"$(cat <<''EOF''\nfeat: End-to-end fiber path tracing with canvas highlighting\n\n- Add FiberPath, PathSegment types for path tracing\n- Enhance useFiberPathTracing hook with bidirectional tracing\n- Update FiberPathPanel to show splice details, splitter info, customer info\n- Add \"Trace Path\" button to Closure, LCP, NAP node toolbars\n- Implement path highlighting with node rings and edge glow animation\n- Non-traced elements fade to 30% opacity when path is active\n- Color-coded loss display (green < 5dB, amber 5-10dB, red > 10dB)\n\nAlso includes:\n- 6 new operations agents for real-life FTTH workflows\n- Operations roadmap (docs/OPERATIONS_ROADMAP.md)\n- Updated CLAUDE.md with agent documentation\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")"
     ],
     "deny": [],
     "ask": []

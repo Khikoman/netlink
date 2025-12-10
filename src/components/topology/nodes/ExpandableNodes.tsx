@@ -21,6 +21,7 @@ import {
   Trash2,
   Copy,
   Info,
+  Route,
 } from "lucide-react";
 import { db, toggleEnclosureExpanded } from "@/lib/db";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -50,6 +51,7 @@ interface BaseNodeData {
   dbId?: number;
   nodeType?: NodeType;
   expanded?: boolean;
+  isHighlighted?: boolean;
   // Action callbacks (passed from TopologyCanvas via node.data)
   onAddChild?: (nodeId: string, nodeType: string) => void;
   onEdit?: (nodeId: string, nodeType: string) => void;
@@ -59,6 +61,7 @@ interface BaseNodeData {
   onInfo?: (nodeId: string, nodeType: string, dbId: number) => void;
   onManagePorts?: (nodeId: string, nodeType: string, dbId: number) => void;
   onOpenSpliceMatrix?: (nodeId: string, nodeType: string, dbId: number) => void;
+  onTracePath?: (nodeId: string, nodeType: string, dbId: number) => void;
 }
 
 // Color configurations for each node type
@@ -112,7 +115,7 @@ function ExpandableClosureNodeComponent({ data, selected, id }: NodeProps<BaseNo
   const [isExpanded, setIsExpanded] = useState(data.expanded || false);
   const style = nodeStyles[data.type] || nodeStyles.closure;
   // Read callbacks from data prop (passed from TopologyCanvas)
-  const { onAddChild, onEdit, onDelete, onSetLocation, onInfo, onOpenSpliceMatrix } = data;
+  const { onAddChild, onEdit, onDelete, onSetLocation, onInfo, onOpenSpliceMatrix, onTracePath, isHighlighted } = data;
 
   // Fetch trays and splices for this closure
   const trays = useLiveQuery(
@@ -151,6 +154,7 @@ function ExpandableClosureNodeComponent({ data, selected, id }: NodeProps<BaseNo
         transition-all duration-300 ease-in-out cursor-pointer
         ${style.bg} ${style.border}
         ${selected ? "ring-2 ring-blue-500 ring-offset-2 shadow-lg" : ""}
+        ${isHighlighted ? "ring-4 ring-blue-400 shadow-xl" : ""}
         ${isExpanded ? "min-w-[280px]" : "min-w-[160px]"}
       `}
     >
@@ -167,6 +171,13 @@ function ExpandableClosureNodeComponent({ data, selected, id }: NodeProps<BaseNo
           onClick={(e) => { e.stopPropagation(); data.dbId && onInfo?.(id, data.type, data.dbId); }}
         >
           <Info className="w-3.5 h-3.5" />
+        </button>
+        <button
+          className="p-1.5 rounded-md bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
+          title="Trace Fiber Path"
+          onClick={(e) => { e.stopPropagation(); data.dbId && onTracePath?.(id, data.type, data.dbId); }}
+        >
+          <Route className="w-3.5 h-3.5" />
         </button>
         <button
           className="p-1.5 rounded-md bg-green-500 hover:bg-green-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
@@ -347,7 +358,7 @@ function ExpandableNAPNodeComponent({ data, selected, id }: NodeProps<BaseNodeDa
   const [isExpanded, setIsExpanded] = useState(data.expanded || false);
   const style = nodeStyles[data.type] || nodeStyles.nap;
   // Read callbacks from data prop (passed from TopologyCanvas)
-  const { onAddChild, onEdit, onDelete, onSetLocation, onInfo, onManagePorts } = data;
+  const { onAddChild, onEdit, onDelete, onSetLocation, onInfo, onManagePorts, onTracePath, isHighlighted } = data;
 
   // Fetch ports for this NAP
   const ports = useLiveQuery(
@@ -376,6 +387,7 @@ function ExpandableNAPNodeComponent({ data, selected, id }: NodeProps<BaseNodeDa
         transition-all duration-300 ease-in-out cursor-pointer
         ${style.bg} ${style.border}
         ${selected ? "ring-2 ring-blue-500 ring-offset-2 shadow-lg" : ""}
+        ${isHighlighted ? "ring-4 ring-blue-400 shadow-xl" : ""}
         ${isExpanded ? "min-w-[260px]" : "min-w-[160px]"}
       `}
     >
@@ -392,6 +404,13 @@ function ExpandableNAPNodeComponent({ data, selected, id }: NodeProps<BaseNodeDa
           onClick={(e) => { e.stopPropagation(); data.dbId && onInfo?.(id, data.type, data.dbId); }}
         >
           <Info className="w-3.5 h-3.5" />
+        </button>
+        <button
+          className="p-1.5 rounded-md bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
+          title="Trace Fiber Path"
+          onClick={(e) => { e.stopPropagation(); data.dbId && onTracePath?.(id, data.type, data.dbId); }}
+        >
+          <Route className="w-3.5 h-3.5" />
         </button>
         <button
           className="p-1.5 rounded-md bg-green-500 hover:bg-green-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
@@ -552,7 +571,7 @@ function BasicNodeComponent({ data, selected, id }: NodeProps<BaseNodeData>) {
   const showTopHandle = data.type !== "olt";
   const showBottomHandle = data.type !== "nap";
   // Read callbacks from data prop (passed from TopologyCanvas)
-  const { onAddChild, onEdit, onDelete, onDuplicate, onSetLocation, onInfo, onOpenSpliceMatrix } = data;
+  const { onAddChild, onEdit, onDelete, onDuplicate, onSetLocation, onInfo, onOpenSpliceMatrix, onTracePath, isHighlighted } = data;
 
   // Determine which child types this node can have
   const canHaveChildren = ["olt", "odf", "closure", "lcp"].includes(data.type);
@@ -568,6 +587,7 @@ function BasicNodeComponent({ data, selected, id }: NodeProps<BaseNodeData>) {
         transition-all duration-200 cursor-pointer
         ${style.bg} ${style.border}
         ${selected ? "ring-2 ring-blue-500 ring-offset-2 shadow-lg" : ""}
+        ${isHighlighted ? "ring-4 ring-blue-400 shadow-xl" : ""}
       `}
     >
       {/* Quick Actions Toolbar - appears on selection */}
@@ -583,6 +603,13 @@ function BasicNodeComponent({ data, selected, id }: NodeProps<BaseNodeData>) {
           onClick={(e) => { e.stopPropagation(); data.dbId && onInfo?.(id, data.type, data.dbId); }}
         >
           <Info className="w-3.5 h-3.5" />
+        </button>
+        <button
+          className="p-1.5 rounded-md bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
+          title="Trace Fiber Path"
+          onClick={(e) => { e.stopPropagation(); data.dbId && onTracePath?.(id, data.type, data.dbId); }}
+        >
+          <Route className="w-3.5 h-3.5" />
         </button>
         {canHaveChildren && (
           <button

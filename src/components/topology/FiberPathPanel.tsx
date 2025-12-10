@@ -11,24 +11,12 @@ import {
   Route,
   Zap,
   TrendingUp,
+  User,
+  Box,
+  MapPin,
 } from "lucide-react";
 import { useFiberPathTracing } from "@/hooks/useFiberPathTracing";
-
-interface PathSegment {
-  nodeId: string;
-  nodeType: string;
-  nodeName: string;
-  dbId: number;
-  fiberIn?: { number: number; color: string; tube: string };
-  fiberOut?: { number: number; color: string; tube: string };
-  spliceInfo?: { trayId: number; loss: number };
-}
-
-interface FiberPath {
-  segments: PathSegment[];
-  totalLoss: number;
-  spliceCount: number;
-}
+import type { FiberPath, FiberPathTraceResult, FiberPathNodeType } from "@/types/splice-matrix";
 
 interface FiberPathPanelProps {
   isOpen: boolean;
@@ -37,7 +25,8 @@ interface FiberPathPanelProps {
   startNodeType: string;
   startDbId: number;
   startFiber?: number;
-  onHighlightPath: (nodeIds: string[]) => void;
+  edges?: any[]; // React Flow edges for path detection
+  onHighlightPath: (nodeIds: string[], edgeIds: string[]) => void;
   onClearHighlight: () => void;
 }
 
@@ -90,13 +79,14 @@ const FiberPathPanel = memo(function FiberPathPanel({
   startNodeType,
   startDbId,
   startFiber,
+  edges,
   onHighlightPath,
   onClearHighlight,
 }: FiberPathPanelProps) {
   const [position, setPosition] = useState({ x: 220, y: 120 });
   const [isDragging, setIsDragging] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
-  const [path, setPath] = useState<FiberPath | null>(null);
+  const [traceResult, setTraceResult] = useState<FiberPathTraceResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isHighlighted, setIsHighlighted] = useState(false);
@@ -130,19 +120,24 @@ const FiberPathPanel = memo(function FiberPathPanel({
       setIsLoading(true);
       setError(null);
       try {
-        const result = await tracePath(startNodeType, startDbId, startFiber);
-        setPath(result);
+        const result = await tracePath(startNodeType as FiberPathNodeType, startDbId, startFiber, edges);
+        if (result.success && result.path) {
+          setTraceResult(result);
+        } else {
+          setError(result.error || "Failed to trace fiber path. Please check the connections.");
+          setTraceResult(null);
+        }
       } catch (err) {
         console.error("Failed to trace fiber path:", err);
         setError("Failed to trace fiber path. Please check the connections.");
-        setPath(null);
+        setTraceResult(null);
       } finally {
         setIsLoading(false);
       }
     };
 
     loadPath();
-  }, [isOpen, startNodeType, startDbId, startFiber, tracePath]);
+  }, [isOpen, startNodeType, startDbId, startFiber, edges, tracePath]);
 
   // Handle panel dragging
   const handleMouseDown = useCallback(
@@ -184,11 +179,10 @@ const FiberPathPanel = memo(function FiberPathPanel({
 
   // Highlight path handler
   const handleHighlightPath = useCallback(() => {
-    if (!path) return;
-    const nodeIds = path.segments.map(seg => seg.nodeId);
-    onHighlightPath(nodeIds);
+    if (!traceResult) return;
+    onHighlightPath(traceResult.highlightedNodeIds, traceResult.highlightedEdgeIds);
     setIsHighlighted(true);
-  }, [path, onHighlightPath]);
+  }, [traceResult, onHighlightPath]);
 
   // Clear highlight handler
   const handleClearHighlight = useCallback(() => {
@@ -274,12 +268,12 @@ const FiberPathPanel = memo(function FiberPathPanel({
           )}
 
           {/* Path Display */}
-          {path && !isLoading && !error && (
+          {traceResult?.path && !isLoading && !error && (
             <>
               {/* Path Segments */}
               <div className="max-h-[400px] overflow-y-auto p-4" data-no-drag>
                 <div className="space-y-1">
-                  {path.segments.map((segment, idx) => (
+                  {traceResult.path.segments.map((segment, idx) => (
                     <div key={segment.nodeId}>
                       {/* Node */}
                       <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
@@ -313,16 +307,53 @@ const FiberPathPanel = memo(function FiberPathPanel({
                           </div>
                           {/* Splice Info */}
                           {segment.spliceInfo && (
-                            <div className="text-xs text-blue-600 mt-0.5 flex items-center gap-1">
+                            <div className={`text-xs mt-0.5 flex items-center gap-1 ${
+                              segment.spliceInfo.loss > 10 ? 'text-red-600' :
+                              segment.spliceInfo.loss > 5 ? 'text-amber-600' : 'text-green-600'
+                            }`}>
                               <Zap className="w-3 h-3" />
-                              Splice: Tray {segment.spliceInfo.trayId}, Loss: {segment.spliceInfo.loss.toFixed(2)} dB
+                              Splice: Tray {segment.spliceInfo.trayNumber}, Loss: {segment.spliceInfo.loss.toFixed(2)} dB
+                              {segment.spliceInfo.status !== "completed" && (
+                                <span className="text-[10px] px-1 py-0.5 bg-yellow-100 text-yellow-700 rounded">
+                                  {segment.spliceInfo.status}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {/* Splitter Info */}
+                          {segment.splitterInfo && (
+                            <div className="text-xs text-orange-600 mt-0.5 flex items-center gap-1">
+                              <Box className="w-3 h-3" />
+                              Splitter: {segment.splitterInfo.type} (Port {segment.splitterInfo.inputPort} → {segment.splitterInfo.outputPort})
+                            </div>
+                          )}
+                          {/* Customer Info */}
+                          {segment.portInfo?.customerName && (
+                            <div className="text-xs text-blue-600 mt-0.5 flex items-center gap-1">
+                              <User className="w-3 h-3" />
+                              {segment.portInfo.customerName}
+                              {segment.portInfo.customerAddress && (
+                                <span className="text-gray-400">- {segment.portInfo.customerAddress}</span>
+                              )}
+                              {segment.portInfo.serviceId && (
+                                <span className="text-gray-400">({segment.portInfo.serviceId})</span>
+                              )}
+                            </div>
+                          )}
+                          {/* Cable Info */}
+                          {segment.cableInfo && (
+                            <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-1">
+                              Cable: {segment.cableInfo.name} ({segment.cableInfo.fiberCount}F)
+                              {segment.cableInfo.distance && (
+                                <span>- {segment.cableInfo.distance}m</span>
+                              )}
                             </div>
                           )}
                         </div>
                       </div>
 
                       {/* Connector Line */}
-                      {idx < path.segments.length - 1 && (
+                      {traceResult.path && idx < traceResult.path.segments.length - 1 && (
                         <div className="flex justify-center py-1">
                           <div className="w-0.5 h-4 bg-gradient-to-b from-blue-300 to-blue-400"></div>
                         </div>
@@ -339,14 +370,22 @@ const FiberPathPanel = memo(function FiberPathPanel({
                   <div className="flex items-center gap-1 text-gray-600">
                     <TrendingUp className="w-3.5 h-3.5" />
                     <span className="font-medium">Total Loss:</span>
-                    <span className={`font-bold ${path.totalLoss > 10 ? 'text-red-600' : path.totalLoss > 5 ? 'text-amber-600' : 'text-green-600'}`}>
-                      {path.totalLoss.toFixed(2)} dB
+                    <span className={`font-bold ${
+                      traceResult.path.totalLoss > 10 ? 'text-red-600' :
+                      traceResult.path.totalLoss > 5 ? 'text-amber-600' : 'text-green-600'
+                    }`}>
+                      {traceResult.path.totalLoss.toFixed(2)} dB
                     </span>
                   </div>
                   <div className="flex items-center gap-1 text-gray-600">
                     <Zap className="w-3.5 h-3.5" />
                     <span className="font-medium">Splices:</span>
-                    <span className="font-bold">{path.spliceCount}</span>
+                    <span className="font-bold">{traceResult.path.spliceCount}</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-gray-600">
+                    <Box className="w-3.5 h-3.5" />
+                    <span className="font-medium">Connectors:</span>
+                    <span className="font-bold">{traceResult.path.connectorCount}</span>
                   </div>
                 </div>
 
@@ -388,9 +427,9 @@ const FiberPathPanel = memo(function FiberPathPanel({
         <div className="px-4 py-2 text-xs text-gray-500">
           {isLoading && "Tracing path..."}
           {error && "Error tracing path"}
-          {path && (
+          {traceResult?.path && (
             <>
-              {path.segments.length} nodes | Loss: {path.totalLoss.toFixed(2)} dB | {path.spliceCount} splices
+              {traceResult.path.segments.length} nodes | Loss: {traceResult.path.totalLoss.toFixed(2)} dB | {traceResult.path.spliceCount} splices
             </>
           )}
         </div>

@@ -230,6 +230,8 @@ When starting work on this project, read these files in order:
 
 NetLink has custom Claude Code agents in `.claude/agents/`. Use them for specialized tasks:
 
+#### Development Agents
+
 | Agent | When to Use | Invoke With |
 |-------|-------------|-------------|
 | `react-flow-specialist` | Canvas work, nodes, edges, callbacks | "Use the react-flow-specialist to..." |
@@ -238,23 +240,34 @@ NetLink has custom Claude Code agents in `.claude/agents/`. Use them for special
 | `netlink-reviewer` | Code review, pattern violations | "Use the netlink-reviewer to..." |
 | `test-architect` | Testing strategy, Jest, Playwright | "Use the test-architect to..." |
 
+#### Operations Agents (Real-Life FTTH Operations)
+
+| Agent | When to Use | Invoke With |
+|-------|-------------|-------------|
+| `ftth-operations-manager` | Work orders, field scheduling, SLA tracking | "Use the ftth-operations-manager to..." |
+| `field-technician-assistant` | Splice procedures, OTDR testing, troubleshooting | "Use the field-technician-assistant to..." |
+| `network-planner` | PON design, loss budgets, split ratios | "Use the network-planner to..." |
+| `report-generator` | As-built docs, splice reports, exports | "Use the report-generator to..." |
+| `customer-service-agent` | Provisioning, support, customer workflows | "Use the customer-service-agent to..." |
+| `inventory-manager` | Material tracking, equipment lifecycle | "Use the inventory-manager to..." |
+
 ### Example Agent Invocations
 
 ```
-# Creating new node types
+# Development Tasks
 "Use the react-flow-specialist to create a new Cabinet node type"
-
-# Database changes
 "Use the dexie-database-specialist to add a new table for work orders"
-
-# Validate fiber design
 "Use the ftth-domain-expert to verify this network hierarchy is correct"
-
-# Code review
 "Use the netlink-reviewer to check TopologyCanvas.tsx for pattern violations"
-
-# Testing
 "Use the test-architect to create tests for the fiber color utilities"
+
+# Operations Tasks
+"Use the ftth-operations-manager to design the work order system"
+"Use the field-technician-assistant to create a splice procedure guide"
+"Use the network-planner to calculate loss budget for a 1:64 split"
+"Use the report-generator to design splice closure report format"
+"Use the customer-service-agent to create a service provisioning workflow"
+"Use the inventory-manager to design equipment tracking schema"
 ```
 
 ### Agent Pipeline (Feature Development)
@@ -268,6 +281,32 @@ For complex features, chain agents:
 4. netlink-reviewer      → Review for pattern compliance
 5. test-architect        → Add test coverage
 ```
+
+### Agent Pipeline (Operations Features)
+
+For operations features (work orders, customers, inventory):
+
+```
+1. ftth-operations-manager   → Define workflows and requirements
+2. customer-service-agent    → Define customer-facing processes
+3. inventory-manager         → Define material tracking needs
+4. dexie-database-specialist → Create database schema
+5. report-generator          → Design documentation formats
+6. react-flow-specialist     → Implement UI components
+```
+
+## Operations Roadmap
+
+See [docs/OPERATIONS_ROADMAP.md](docs/OPERATIONS_ROADMAP.md) for the 6-phase plan to transform NetLink into a complete FTTH operations platform:
+
+| Phase | Focus | Key Deliverables |
+|-------|-------|------------------|
+| Phase 1 | Foundation | Supabase migration, authentication, customers |
+| Phase 2 | Work Orders | Work order system, mobile PWA, scheduling |
+| Phase 3 | Inventory | Material tracking, equipment lifecycle |
+| Phase 4 | Documentation | OTDR integration, reports, compliance |
+| Phase 5 | Analytics | Dashboards, KPIs, predictive maintenance |
+| Phase 6 | Integrations | API platform, billing, CRM, GIS |
 
 ### Available Slash Commands
 
