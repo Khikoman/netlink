@@ -232,6 +232,8 @@ export type SpliceType = "fusion" | "mechanical";
 export interface Splice {
   id?: number;
   trayId: number;
+  // React Flow edge ID for canvas integration
+  edgeId?: string;
   // Cable A (source)
   cableAId: number;
   cableAName: string;
@@ -249,7 +251,7 @@ export interface Splice {
   loss?: number; // dB
   lossDirection?: "a-to-b" | "b-to-a" | "bidirectional";
   // Documentation
-  technicianName: string;
+  technicianName?: string;
   timestamp: Date;
   notes?: string;
   otdrTraceId?: number;

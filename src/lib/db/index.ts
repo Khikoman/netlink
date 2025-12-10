@@ -170,6 +170,30 @@ class NetLinkDB extends Dexie {
       odfs: "++id, projectId, oltId, name",
       odfPorts: "++id, odfId, portNumber, status, ponPortId, closureId",
     });
+
+    // Version 7: Add edgeId to splices for unified canvas-based splice editing
+    // Enables looking up splices by React Flow edge ID for the UnifiedSpliceEditor
+    this.version(7).stores({
+      projects: "++id, name, status, createdAt",
+      enclosures: "++id, projectId, name, type, parentType, parentId, hierarchyLevel, odfPortId",
+      trays: "++id, enclosureId, number",
+      cables: "++id, projectId, name, fiberCount, role",
+      splices: "++id, trayId, edgeId, cableAId, cableBId, fiberA, fiberB, status, timestamp",
+      otdrTraces: "++id, spliceId, wavelength, uploadedAt",
+      inventory: "++id, category, name, partNumber",
+      inventoryUsage: "++id, inventoryId, projectId, date",
+      lossBudgets: "++id, [input.name], createdAt",
+      mapNodes: "++id, projectId, type, enclosureId",
+      mapRoutes: "++id, projectId, fromNodeId, toNodeId, cableId",
+      syncQueue: "++id, table, recordId, synced, timestamp",
+      splitters: "++id, enclosureId, name, type",
+      ports: "++id, enclosureId, splitterId, portNumber, status",
+      olts: "++id, projectId, name",
+      oltPonPorts: "++id, oltId, portNumber, status",
+      customerAttachments: "++id, portId, projectId, attachmentType, uploadedAt",
+      odfs: "++id, projectId, oltId, name",
+      odfPorts: "++id, odfId, portNumber, status, ponPortId, closureId",
+    });
   }
 }
 
@@ -362,6 +386,10 @@ export async function getSplicesByCable(cableId: number) {
   const asA = await db.splices.where("cableAId").equals(cableId).toArray();
   const asB = await db.splices.where("cableBId").equals(cableId).toArray();
   return [...asA, ...asB];
+}
+
+export async function getSplicesByEdge(edgeId: string) {
+  return db.splices.where("edgeId").equals(edgeId).toArray();
 }
 
 export async function getSplice(id: number) {

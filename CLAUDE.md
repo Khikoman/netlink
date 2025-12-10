@@ -28,7 +28,14 @@ src/
 │   ├── topology/          # Canvas components
 │   │   ├── TopologyCanvas.tsx       # Main React Flow canvas
 │   │   ├── FloatingPalette.tsx      # Drag-and-drop component palette
-│   │   ├── FloatingSplicePanel.tsx  # Splice editing panel
+│   │   ├── UnifiedSpliceEditor/     # Fiber Fusion Studio - visual splice editor
+│   │   │   ├── index.tsx            # Main floating panel
+│   │   │   ├── CableCrossSection.tsx # Visual cable end with tubes
+│   │   │   ├── TubeRow.tsx          # Buffer tube with 12 colored fibers
+│   │   │   ├── FiberDot.tsx         # Clickable fiber dot
+│   │   │   ├── ConnectionLine.tsx   # SVG bezier path with gradient
+│   │   │   ├── SparkleEffect.tsx    # Particle animation on connect
+│   │   │   └── MetadataPanel.tsx    # Loss, method, status, technician
 │   │   ├── nodes/
 │   │   │   └── ExpandableNodes.tsx  # All node types (OLT, ODF, Closure, LCP, NAP)
 │   │   └── edges/
@@ -40,7 +47,8 @@ src/
 ├── lib/
 │   ├── db/
 │   │   ├── index.ts                 # Dexie database schema
-│   │   └── hooks.ts                 # React hooks for DB queries
+│   │   ├── hooks.ts                 # React hooks for DB queries
+│   │   └── spliceService.ts         # Edge-based splice CRUD operations
 │   ├── fiberColors.ts               # Fiber color standards
 │   └── topology/
 │       └── layoutUtils.ts           # Auto-layout algorithms
@@ -74,13 +82,27 @@ OLT (Optical Line Terminal)
 ## Database Schema (Dexie/IndexedDB)
 
 ```typescript
-// Key tables
+// Key tables (v7)
 olts: "++id, projectId, name, canvasX, canvasY"
 odfs: "++id, projectId, oltId, name, canvasX, canvasY"
 enclosures: "++id, projectId, type, parentType, parentId, canvasX, canvasY, expanded"
 trays: "++id, enclosureId, number"
-splices: "++id, trayId, fiberA, fiberB, fiberAColor, fiberBColor"
+splices: "++id, trayId, edgeId, cableAId, cableBId, fiberA, fiberB, status, timestamp"
+cables: "++id, projectId, name, fiberCount, fiberType"
 ports: "++id, enclosureId, portNumber, status, customerName"
+```
+
+### Edge-Based Splice Storage
+
+Splices are stored with an `edgeId` field linking them to React Flow edges:
+
+```typescript
+// Query splices for an edge
+const splices = await db.splices.where("edgeId").equals(edgeId).toArray();
+
+// Save splices via spliceService
+import { saveSplicesForEdge } from "@/lib/db/spliceService";
+await saveSplicesForEdge({ edgeId, trayId, cableAId, cableBId, connections });
 ```
 
 ## Key Implementation Patterns
@@ -149,7 +171,7 @@ FiberEdge uses SVG gradients for color transitions and filter effects for glow:
 
 ## Current Implementation Status
 
-### Completed (Phase 1 & 2)
+### Completed
 - [x] Canvas-centric layout
 - [x] Position persistence (canvasX/canvasY)
 - [x] Expandable nodes (Closure shows trays/splices, NAP shows ports)
@@ -157,14 +179,55 @@ FiberEdge uses SVG gradients for color transitions and filter effects for glow:
 - [x] Floating component palette (drag-to-create)
 - [x] Connection validation (hierarchy rules)
 - [x] NodeToolbar with quick actions (Add, Edit, Delete, Location, Duplicate)
-- [x] Splice panel for fiber connections
+- [x] **UnifiedSpliceEditor** - "Fiber Fusion Studio" visual splice editor
+- [x] Keyboard shortcuts (Delete, E for edit, G for GPS, S for splices, T for trace)
+- [x] GPS location picker integration
+- [x] Full edit dialog for node properties
+- [x] Fiber path tracing with canvas highlighting
 
-### Pending (Phase 2 continued)
+### Pending
 - [ ] Full undo/redo system (`useUndoRedo` hook exists but not integrated)
-- [ ] Keyboard shortcuts (Delete, Ctrl+Z, etc.)
-- [ ] GPS location picker integration
-- [ ] Full edit dialog for node properties
 - [ ] Customer nodes as visual elements
+
+## UnifiedSpliceEditor ("Fiber Fusion Studio")
+
+The UnifiedSpliceEditor is the **canvas-only** splice editing experience that replaces all sidebar splice components.
+
+### Features
+- **Visual Fiber Colors**: TIA-598 standard colors for buffer tubes and fibers
+- **Click-to-Connect**: Click fiber A → Click fiber B → Spark animation
+- **Batch Operations**: Auto-match 1:1 with cascading animation
+- **Full Metadata**: Loss (dB), method (fusion/mechanical), status, technician
+- **Draggable Panel**: Position saved per session
+
+### Opening the Splice Editor
+```typescript
+// From FiberEdge (click Edit Splices button)
+onOpenSpliceEditor={handleOpenSpliceEditor}
+
+// From TopologyCanvas - opens UnifiedSpliceEditor
+const handleOpenSpliceEditor = useCallback(async (edgeId: string) => {
+  // Finds/creates cable and tray, then opens editor
+  setSpliceEditor({ edgeId, trayId, cableA, cableB });
+}, [edges, nodes, projectId]);
+```
+
+### Component Structure
+```
+UnifiedSpliceEditor/
+├── index.tsx          # Main floating panel with drag support
+├── CableCrossSection  # Cable end with expandable tubes
+├── TubeRow            # 12 fiber dots with TIA-598 colors
+├── FiberDot           # Clickable/selectable fiber
+├── ConnectionLine     # SVG bezier curve with gradient
+├── SparkleEffect      # Particle burst on connection
+└── MetadataPanel      # Loss/method/status/technician form
+```
+
+### Animations
+- **Spark Burst**: 8-12 particles on connection (400ms)
+- **Fiber Pulse**: Connected fibers glow with CSS animation
+- **Flow Line**: SVG `animateMotion` for "light traveling" effect
 
 ## Common Tasks
 
@@ -221,6 +284,32 @@ When starting work on this project, read these files in order:
 **Solution:** Inject callbacks directly into `node.data` via a `useMemo` transformation before passing nodes to React Flow. Same pattern applied to edges.
 
 **Key Insight:** Always pass functions to React Flow nodes/edges via the `data` prop, never rely on React Context.
+
+---
+
+### Session: Unified Splice Editor (2024)
+**Goal:** Consolidate 5 redundant splice editors into ONE canvas-only visual experience.
+
+**Components Removed:**
+- `FloatingSplicePanel.tsx`
+- `EdgeSpliceEditor.tsx`
+- `src/components/splice/SpliceMatrix.tsx` (sidebar)
+- `src/components/splice/EnclosureManager.tsx` (sidebar)
+
+**New Components Created:**
+- `UnifiedSpliceEditor/` - Full visual fiber splice editor with:
+  - TIA-598 color-coded fibers
+  - Click-to-connect workflow
+  - Spark animation on connection
+  - Batch auto-match operations
+  - Full metadata editing (loss, method, status, technician)
+
+**Database Changes:**
+- Added `edgeId` field to `Splice` interface (v7 schema)
+- Created `spliceService.ts` for edge-based CRUD
+- Added `useSplicesByEdge` hook
+
+**Key Pattern:** Edge-based splice storage - splices are linked to React Flow edges via `edgeId` rather than only via `trayId`.
 
 ---
 

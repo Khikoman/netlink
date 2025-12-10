@@ -146,6 +146,72 @@ export function useSpliceStats(trayId: number | undefined) {
 }
 
 // ============================================
+// EDGE-BASED SPLICE HOOKS (for UnifiedSpliceEditor)
+// ============================================
+
+/**
+ * Get all splices for a React Flow edge
+ * Live query that updates when splices change
+ */
+export function useSplicesByEdge(edgeId: string | undefined) {
+  return useLiveQuery(
+    () => (edgeId ? db.splices.where("edgeId").equals(edgeId).toArray() : []),
+    [edgeId]
+  );
+}
+
+/**
+ * Get splice statistics for an edge
+ */
+export function useSpliceStatsByEdge(edgeId: string | undefined) {
+  return useLiveQuery(async () => {
+    if (!edgeId) return null;
+
+    const splices = await db.splices.where("edgeId").equals(edgeId).toArray();
+
+    if (splices.length === 0) {
+      return {
+        total: 0,
+        completed: 0,
+        pending: 0,
+        needsReview: 0,
+        failed: 0,
+        avgLoss: 0,
+        minLoss: 0,
+        maxLoss: 0,
+      };
+    }
+
+    const lossValues = splices
+      .filter(s => s.loss !== undefined && s.loss !== null)
+      .map(s => s.loss as number);
+
+    return {
+      total: splices.length,
+      completed: splices.filter(s => s.status === "completed").length,
+      pending: splices.filter(s => s.status === "pending").length,
+      needsReview: splices.filter(s => s.status === "needs-review").length,
+      failed: splices.filter(s => s.status === "failed").length,
+      avgLoss: lossValues.length > 0
+        ? lossValues.reduce((sum, l) => sum + l, 0) / lossValues.length
+        : 0,
+      minLoss: lossValues.length > 0 ? Math.min(...lossValues) : 0,
+      maxLoss: lossValues.length > 0 ? Math.max(...lossValues) : 0,
+    };
+  }, [edgeId]);
+}
+
+/**
+ * Get splice count for an edge (lightweight for badge display)
+ */
+export function useSpliceCountByEdge(edgeId: string | undefined) {
+  return useLiveQuery(
+    () => (edgeId ? db.splices.where("edgeId").equals(edgeId).count() : 0),
+    [edgeId]
+  );
+}
+
+// ============================================
 // INVENTORY HOOKS
 // ============================================
 
