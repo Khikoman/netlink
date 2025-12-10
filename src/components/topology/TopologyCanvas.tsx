@@ -325,6 +325,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const [addDialog, setAddDialog] = useState<AddNodeDialog | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [showMinimap, setShowMinimap] = useState(true);
   const [newNodeName, setNewNodeName] = useState("");
   const [newNodeType, setNewNodeType] = useState("");
@@ -390,6 +391,14 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
   } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
+
+  // Debounce search query for performance (300ms delay)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   // Initialize undo/redo system
   const {
@@ -1644,7 +1653,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
 
   // Filter nodes by search AND inject action callbacks into node data
   const filteredNodes = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
+    const query = debouncedSearchQuery.trim().toLowerCase();
     const hasHighlight = highlightedPath.nodeIds.size > 0;
     return nodes.map((node) => {
       const isHighlighted = highlightedPath.nodeIds.has(node.id);
@@ -1677,7 +1686,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
         },
       };
     });
-  }, [nodes, searchQuery, highlightedPath.nodeIds, handleNodeAddChild, handleNodeEdit, handleNodeDelete, handleNodeDuplicate, handleNodeSetLocation, handleNodeInfo, handleOpenPortManager, handleOpenSpliceMatrix, handleOpenFiberPath]);
+  }, [nodes, debouncedSearchQuery, highlightedPath.nodeIds, handleNodeAddChild, handleNodeEdit, handleNodeDelete, handleNodeDuplicate, handleNodeSetLocation, handleNodeInfo, handleOpenPortManager, handleOpenSpliceMatrix, handleOpenFiberPath]);
 
   // Inject action callbacks into edge data AND apply path highlighting
   const edgesWithCallbacks = useMemo(() => {
