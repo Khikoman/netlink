@@ -5,7 +5,6 @@ import {
   EdgeProps,
   getBezierPath,
   EdgeLabelRenderer,
-  BaseEdge,
 } from "reactflow";
 import { Cable, ChevronDown, ChevronUp, Check, AlertCircle, Settings2, Zap } from "lucide-react";
 import { FIBER_COLORS } from "@/lib/fiberColors";
@@ -186,19 +185,25 @@ function FiberEdgeComponent({
                 ${selected ? "ring-2 ring-blue-500" : ""}
               `}
             >
-              {/* Cable config button */}
+              {/* Cable config button - shows fiber count prominently */}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   onOpenCableConfig?.(id);
                 }}
-                className="flex items-center gap-1 px-2 py-1 text-xs font-medium hover:bg-amber-50 transition-colors"
-                title="Configure cable"
+                className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium hover:bg-amber-50 transition-colors group"
+                title="Click to edit cable (fiber count, name, length)"
               >
-                <Cable className="w-3 h-3 text-amber-500" />
-                <span className="text-gray-700">
-                  {data?.cable?.name || `${fiberCount || data?.cable?.fiberCount || 48}F`}
+                <Cable className="w-3.5 h-3.5 text-amber-500" />
+                <span className="text-amber-600 font-bold">
+                  {data?.cable?.fiberCount || fiberCount || 48}F
                 </span>
+                {data?.cable?.name && data.cable.name !== `${data.cable.fiberCount}F` && (
+                  <span className="text-gray-500 text-[10px]">
+                    {data.cable.name}
+                  </span>
+                )}
+                <Settings2 className="w-3 h-3 text-gray-300 group-hover:text-amber-500 transition-colors" />
               </button>
 
               {/* Expand/splice info button */}
