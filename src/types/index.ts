@@ -241,9 +241,11 @@ export type SpliceType = "fusion" | "mechanical";
 export interface Splice {
   id?: number;
   trayId: number;
-  // React Flow edge ID for canvas integration
+  // React Flow node ID where splice occurs (closure/ODF)
+  nodeId?: string;
+  // React Flow edge ID for canvas integration (deprecated - use nodeId)
   edgeId?: string;
-  // Cable A (source)
+  // Cable A (incoming)
   cableAId: number;
   cableAName: string;
   fiberA: number;

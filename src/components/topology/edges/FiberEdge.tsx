@@ -7,7 +7,7 @@ import {
   EdgeLabelRenderer,
   BaseEdge,
 } from "reactflow";
-import { Cable, ChevronDown, ChevronUp, Zap, Edit3, Link2, Check, AlertCircle, Settings2 } from "lucide-react";
+import { Cable, ChevronDown, ChevronUp, Check, AlertCircle, Settings2, Zap } from "lucide-react";
 import { FIBER_COLORS } from "@/lib/fiberColors";
 
 interface FiberConnection {
@@ -32,8 +32,7 @@ interface FiberEdgeData {
     role?: string;
     length?: number;
   };
-  // Action callbacks (passed from TopologyCanvas via edge.data)
-  onOpenSpliceEditor?: (edgeId: string) => void;
+  // Action callback (passed from TopologyCanvas via edge.data)
   onOpenCableConfig?: (edgeId: string) => void;
 }
 
@@ -64,8 +63,7 @@ function FiberEdgeComponent({
   selected,
 }: EdgeProps<FiberEdgeData>) {
   const [isExpanded, setIsExpanded] = useState(false);
-  // Read callbacks from edge data (passed from TopologyCanvas)
-  const onOpenSpliceEditor = data?.onOpenSpliceEditor;
+  // Read callback from edge data (passed from TopologyCanvas)
   const onOpenCableConfig = data?.onOpenCableConfig;
 
   // Calculate path
@@ -206,7 +204,7 @@ function FiberEdgeComponent({
               {/* Expand/splice info button */}
               <button
                 onClick={handleToggle}
-                className="flex items-center gap-1.5 px-1.5 py-1 text-xs font-medium hover:bg-gray-50 transition-colors border-l border-gray-200"
+                className="flex items-center gap-1.5 px-1.5 py-1 text-xs font-medium hover:bg-gray-50 transition-colors border-l border-gray-200 rounded-r-full"
               >
                 {hasFiberData && (
                   <>
@@ -228,28 +226,6 @@ function FiberEdgeComponent({
                   </>
                 )}
                 <ChevronDown className="w-3 h-3 text-gray-400" />
-              </button>
-
-              {/* Edit Splices button - ALWAYS visible */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpenSpliceEditor?.(id);
-                }}
-                className={`
-                  p-1.5 rounded-r-full transition-colors border-l border-gray-200
-                  ${hasFiberData
-                    ? "hover:bg-blue-50 text-blue-500"
-                    : "hover:bg-indigo-50 text-indigo-400"
-                  }
-                `}
-                title={hasFiberData ? "Edit Splices" : "Add Splices"}
-              >
-                {hasFiberData ? (
-                  <Edit3 className="w-3 h-3" />
-                ) : (
-                  <Zap className="w-3 h-3" />
-                )}
               </button>
             </div>
           ) : (
@@ -276,25 +252,12 @@ function FiberEdgeComponent({
                   </span>
                   <Settings2 className="w-3 h-3 text-gray-400" />
                 </button>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenSpliceEditor?.(id);
-                    }}
-                    className="p-1 hover:bg-blue-100 rounded text-blue-500 transition-colors flex items-center gap-1"
-                    title={hasFiberData ? "Edit Splices" : "Add Splices"}
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    <span className="text-[10px]">{hasFiberData ? "Edit" : "Add"}</span>
-                  </button>
-                  <button
-                    onClick={handleToggle}
-                    className="p-1 hover:bg-gray-100 rounded transition-colors"
-                  >
-                    <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
-                  </button>
-                </div>
+                <button
+                  onClick={handleToggle}
+                  className="p-1 hover:bg-gray-100 rounded transition-colors"
+                >
+                  <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
+                </button>
               </div>
 
               {/* Stats row */}

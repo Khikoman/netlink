@@ -11,19 +11,8 @@ import {
   getClosuresByODF,
 } from "./index";
 import type {
-  Project,
-  Enclosure,
-  Tray,
   Cable,
   Splice,
-  InventoryItem,
-  LossBudgetResult,
-  MapNode,
-  MapRoute,
-  OLT,
-  OLTPonPort,
-  ODF,
-  ODFPort,
 } from "@/types";
 
 // ============================================
@@ -34,16 +23,8 @@ export function useProjects() {
   return useLiveQuery(() => db.projects.orderBy("createdAt").reverse().toArray(), []);
 }
 
-export function useProject(id: number | undefined) {
-  return useLiveQuery(() => (id ? db.projects.get(id) : undefined), [id]);
-}
-
-export function useActiveProjects() {
-  return useLiveQuery(
-    () => db.projects.where("status").equals("active").toArray(),
-    []
-  );
-}
+// useProject removed - use useNetwork().currentProject from NetworkContext instead
+// useActiveProjects removed - not used anywhere
 
 // ============================================
 // ENCLOSURE HOOKS
@@ -60,9 +41,7 @@ export function useEnclosure(id: number | undefined) {
   return useLiveQuery(() => (id ? db.enclosures.get(id) : undefined), [id]);
 }
 
-export function useAllEnclosures() {
-  return useLiveQuery(() => db.enclosures.toArray(), []);
-}
+// useAllEnclosures removed - not used anywhere
 
 // ============================================
 // TRAY HOOKS
@@ -356,31 +335,9 @@ export function useLossBudget(id: number | undefined) {
 }
 
 // ============================================
-// MAP HOOKS
+// MAP HOOKS (removed - map feature not actively used)
 // ============================================
-
-export function useMapNodes(projectId: number | undefined) {
-  return useLiveQuery(
-    () => (projectId ? db.mapNodes.where("projectId").equals(projectId).toArray() : []),
-    [projectId]
-  );
-}
-
-export function useMapRoutes(projectId: number | undefined) {
-  return useLiveQuery(
-    () => (projectId ? db.mapRoutes.where("projectId").equals(projectId).toArray() : []),
-    [projectId]
-  );
-}
-
-export function useNetworkMap(projectId: number | undefined) {
-  return useLiveQuery(async () => {
-    if (!projectId) return { nodes: [], routes: [] };
-    const nodes = await db.mapNodes.where("projectId").equals(projectId).toArray();
-    const routes = await db.mapRoutes.where("projectId").equals(projectId).toArray();
-    return { nodes, routes };
-  }, [projectId]);
-}
+// useMapNodes, useMapRoutes, useNetworkMap removed
 
 // ============================================
 // OLT HOOKS
@@ -643,14 +600,9 @@ export function useOrphanedClosures(projectId: number | undefined) {
 }
 
 // ============================================
-// SYNC HOOKS
+// SYNC HOOKS (removed - sync not implemented)
 // ============================================
-
-export function usePendingSyncCount() {
-  return useLiveQuery(async () => {
-    return db.syncQueue.filter(item => !item.synced).count();
-  }, []);
-}
+// usePendingSyncCount removed
 
 // ============================================
 // SPLITTER HOOKS

@@ -222,6 +222,31 @@ class NetLinkDB extends Dexie {
       odfPorts: "++id, odfId, portNumber, status, ponPortId, closureId",
       edgeCables: "++id, edgeId, cableId, &[edgeId+cableId]",
     });
+
+    // Version 9: Add nodeId to splices for node-centric splice editing
+    // Splices happen at nodes (closures/ODFs), not on edges
+    this.version(9).stores({
+      projects: "++id, name, status, createdAt",
+      enclosures: "++id, projectId, name, type, parentType, parentId, hierarchyLevel, odfPortId",
+      trays: "++id, enclosureId, number",
+      cables: "++id, projectId, name, fiberCount, role",
+      splices: "++id, trayId, nodeId, edgeId, cableAId, cableBId, fiberA, fiberB, status, timestamp",
+      otdrTraces: "++id, spliceId, wavelength, uploadedAt",
+      inventory: "++id, category, name, partNumber",
+      inventoryUsage: "++id, inventoryId, projectId, date",
+      lossBudgets: "++id, [input.name], createdAt",
+      mapNodes: "++id, projectId, type, enclosureId",
+      mapRoutes: "++id, projectId, fromNodeId, toNodeId, cableId",
+      syncQueue: "++id, table, recordId, synced, timestamp",
+      splitters: "++id, enclosureId, name, type",
+      ports: "++id, enclosureId, splitterId, portNumber, status",
+      olts: "++id, projectId, name",
+      oltPonPorts: "++id, oltId, portNumber, status",
+      customerAttachments: "++id, portId, projectId, attachmentType, uploadedAt",
+      odfs: "++id, projectId, oltId, name",
+      odfPorts: "++id, odfId, portNumber, status, ponPortId, closureId",
+      edgeCables: "++id, edgeId, cableId, &[edgeId+cableId]",
+    });
   }
 }
 

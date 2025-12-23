@@ -49,7 +49,6 @@ import {
   useSplicesByEdgeMap,
 } from "@/lib/db/hooks";
 import { useNetwork } from "@/contexts/NetworkContext";
-import { NodeActionsProvider } from "@/contexts/NodeActionsContext";
 import { expandableNodeTypes } from "./nodes/ExpandableNodes";
 import { fiberEdgeTypes } from "./edges/FiberEdge";
 import { getLayoutedElements } from "@/lib/topology/layoutUtils";
@@ -332,11 +331,13 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
   const [newNodeType, setNewNodeType] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<{ nodeId: string; childCount: number } | null>(null);
   const [showPalette, setShowPalette] = useState(true);
+  // Node-centric splice editor state (n8n style)
   const [spliceEditor, setSpliceEditor] = useState<{
-    edgeId: string;
+    nodeId: string;
+    nodeName: string;
     trayId: number;
-    cableA: { id: number; name: string; fiberCount: number };
-    cableB: { id: number; name: string; fiberCount: number };
+    incomingCables: { id: number; name: string; fiberCount: number; edgeId: string }[];
+    outgoingCables: { id: number; name: string; fiberCount: number; edgeId: string }[];
   } | null>(null);
   const [editDialog, setEditDialog] = useState<{ nodeId: string; nodeType: string; dbId: number } | null>(null);
   const [gpsDialog, setGpsDialog] = useState<{ nodeId: string; nodeType: string; dbId: number; lat?: number; lng?: number } | null>(null);
@@ -1116,115 +1117,111 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     setHighlightedPath({ nodeIds: new Set(), edgeIds: new Set() });
   }, []);
 
-  // Handle open splice editor for an edge - finds/creates cables and tray via junction table
-  const handleOpenSpliceEditor = useCallback(async (edgeId: string) => {
+  // Handle open splice editor from a node (n8n style - node-centric)
+  // Finds incoming and outgoing cables for proper splice editing
+  const handleOpenSpliceEditorFromNode = useCallback(async (nodeId: string, nodeType: string, dbId: number) => {
     if (!projectId) return;
 
-    // Find the edge and extract info
-    const edge = edges.find(e => e.id === edgeId);
-    if (!edge) return;
+    // Support closures, ODF, and LCP
+    if (!["closure", "odf", "lcp"].includes(nodeType)) return;
 
-    const sourceNode = nodes.find(n => n.id === edge.source);
-    const targetNode = nodes.find(n => n.id === edge.target);
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node) return;
 
     try {
-      // Find or create cable record for this edge via edgeCables junction table
-      const linkedCables = await getCablesByEdge(edgeId);
-      let cable = linkedCables[0];
+      // Find ALL incoming edges (cables coming INTO this node)
+      const incomingEdges = edges.filter(e => e.target === nodeId);
+      // Find ALL outgoing edges (cables going OUT from this node)
+      const outgoingEdges = edges.filter(e => e.source === nodeId);
 
-      // Create cable if it doesn't exist
-      if (!cable) {
-        const cableName = edge.data?.cable?.name || `Cable-${edgeId.slice(0, 8)}`;
-        const fiberCount = edge.data?.cable?.fiberCount || 48;
-        const cableId = await db.cables.add({
-          projectId,
-          name: cableName,
-          fiberCount: fiberCount as 12 | 24 | 48 | 96 | 144 | 216 | 288,
-          fiberType: "singlemode",
-        }) as number;
-
-        // Link via junction table
-        await createEdgeCable(edgeId, cableId);
-
-        cable = {
-          id: cableId,
-          name: cableName,
-          fiberCount: fiberCount as 12 | 24 | 48 | 96 | 144 | 216 | 288,
-          fiberType: "singlemode",
-          projectId,
-        };
-      }
-
-      // Find or create a tray for the splices
-      // Look for an enclosure at the source node (closures have trays)
-      let trayId: number | undefined;
-      const sourceDbId = sourceNode?.data?.dbId;
-      const sourceType = sourceNode?.data?.type;
-
-      if (sourceDbId && (sourceType === "closure" || sourceType === "lcp" || sourceType === "odf")) {
-        // Check if enclosure has a tray
-        const trays = await db.trays.where("enclosureId").equals(sourceDbId).toArray();
-        if (trays.length > 0) {
-          trayId = trays[0].id;
-        } else {
-          // Create a default tray for this enclosure
-          trayId = await db.trays.add({
-            enclosureId: sourceDbId,
-            number: 1,
-            capacity: 24,
+      // Get or create cables for incoming edges
+      const incomingCables: { id: number; name: string; fiberCount: number; edgeId: string }[] = [];
+      for (const edge of incomingEdges) {
+        let cables = await getCablesByEdge(edge.id);
+        if (cables.length === 0) {
+          // Auto-create cable for this edge
+          const sourceNode = nodes.find(n => n.id === edge.source);
+          const cableName = edge.data?.cable?.name || `From-${sourceNode?.data?.label || edge.source.slice(0, 8)}`;
+          const fiberCount = edge.data?.cable?.fiberCount || 48;
+          const cableId = await db.cables.add({
+            projectId,
+            name: cableName,
+            fiberCount: fiberCount as 12 | 24 | 48 | 96 | 144 | 216 | 288,
+            fiberType: "singlemode",
+          }) as number;
+          await createEdgeCable(edge.id, cableId);
+          cables = await getCablesByEdge(edge.id);
+        }
+        if (cables[0]) {
+          incomingCables.push({
+            id: cables[0].id!,
+            name: cables[0].name,
+            fiberCount: cables[0].fiberCount,
+            edgeId: edge.id,
           });
         }
       }
 
-      // If no tray found (e.g., OLT-ODF edge), create a virtual one by using a negative ID
-      // The splice service can handle trayId = 0 as a "no tray" placeholder
-      if (!trayId) {
-        trayId = 0;
+      // Get or create cables for outgoing edges
+      const outgoingCables: { id: number; name: string; fiberCount: number; edgeId: string }[] = [];
+      for (const edge of outgoingEdges) {
+        let cables = await getCablesByEdge(edge.id);
+        if (cables.length === 0) {
+          // Auto-create cable for this edge
+          const targetNode = nodes.find(n => n.id === edge.target);
+          const cableName = edge.data?.cable?.name || `To-${targetNode?.data?.label || edge.target.slice(0, 8)}`;
+          const fiberCount = edge.data?.cable?.fiberCount || 48;
+          const cableId = await db.cables.add({
+            projectId,
+            name: cableName,
+            fiberCount: fiberCount as 12 | 24 | 48 | 96 | 144 | 216 | 288,
+            fiberType: "singlemode",
+          }) as number;
+          await createEdgeCable(edge.id, cableId);
+          cables = await getCablesByEdge(edge.id);
+        }
+        if (cables[0]) {
+          outgoingCables.push({
+            id: cables[0].id!,
+            name: cables[0].name,
+            fiberCount: cables[0].fiberCount,
+            edgeId: edge.id,
+          });
+        }
       }
 
-      // Set up cable info for both ends
-      const sourceName = sourceNode?.data?.label || "Source";
-      const targetName = targetNode?.data?.label || "Target";
-      const fiberCount = cable?.fiberCount || edge.data?.cable?.fiberCount || 48;
+      // Find or create tray for this enclosure
+      let trayId = 0;
+      if (dbId && nodeType === "closure") {
+        const trays = await db.trays.where("enclosureId").equals(dbId).toArray();
+        if (trays.length > 0) {
+          trayId = trays[0].id!;
+        } else {
+          trayId = await db.trays.add({
+            enclosureId: dbId,
+            number: 1,
+            capacity: 24,
+          }) as number;
+        }
+      }
+
+      // Check if we have at least one cable on each side
+      if (incomingCables.length === 0 && outgoingCables.length === 0) {
+        console.warn("No cables found for node:", nodeId);
+        return;
+      }
 
       setSpliceEditor({
-        edgeId,
+        nodeId,
+        nodeName: node.data?.label || "Node",
         trayId,
-        cableA: {
-          id: cable!.id!,
-          name: `${sourceName} (${cable!.name})`,
-          fiberCount,
-        },
-        cableB: {
-          id: cable!.id!,
-          name: `${targetName} (${cable!.name})`,
-          fiberCount,
-        },
+        incomingCables,
+        outgoingCables,
       });
     } catch (err) {
       console.error("Failed to open splice editor:", err);
     }
   }, [edges, nodes, projectId]);
-
-  // Handle open splice editor from a node - finds connected edge and opens UnifiedSpliceEditor
-  const handleOpenSpliceEditorFromNode = useCallback(async (nodeId: string, nodeType: string, dbId: number) => {
-    // Support closures, ODF, and LCP
-    if (!["closure", "odf", "lcp"].includes(nodeType)) return;
-
-    // Find connected edges - prefer incoming edge (the splice point)
-    const incomingEdge = edges.find(e => e.target === nodeId);
-    const outgoingEdge = edges.find(e => e.source === nodeId);
-
-    // Use incoming edge first, fall back to outgoing
-    const targetEdge = incomingEdge || outgoingEdge;
-
-    if (targetEdge) {
-      // Open the unified splice editor for this edge
-      handleOpenSpliceEditor(targetEdge.id);
-    } else {
-      console.warn("No connected edge found for node:", nodeId);
-    }
-  }, [edges, handleOpenSpliceEditor]);
 
   // Handle open cable config popover for an edge - loads from database via junction table
   const handleOpenCableConfig = useCallback(async (edgeId: string) => {
@@ -1502,8 +1499,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
           // Database-driven splice connections
           connections: connections.length > 0 ? connections : edge.data?.connections,
           fiberCount: dbCable?.fiberCount || edge.data?.fiberCount || connections.length,
-          // Action callbacks
-          onOpenSpliceEditor: handleOpenSpliceEditor,
+          // Action callbacks (splice editing removed - now node-centric)
           onOpenCableConfig: handleOpenCableConfig,
           isHighlighted,
         },
@@ -1517,7 +1513,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
         animated: edge.data?.animated || isHighlighted, // Animate highlighted edges
       };
     });
-  }, [edges, highlightedPath.edgeIds, edgeCablesMap, splicesByEdgeMap, handleOpenSpliceEditor, handleOpenCableConfig]);
+  }, [edges, highlightedPath.edgeIds, edgeCablesMap, splicesByEdgeMap, handleOpenCableConfig]);
 
   const typeIcons: Record<string, React.ReactNode> = {
     odf: <Box className="w-4 h-4" />,
@@ -1536,16 +1532,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
       />
 
       <div ref={reactFlowWrapper} className="w-full h-full">
-        <NodeActionsProvider
-          actions={{
-            onAddChild: handleNodeAddChild,
-            onEdit: handleNodeEdit,
-            onDelete: handleNodeDelete,
-            onDuplicate: handleNodeDuplicate,
-            onSetLocation: handleNodeSetLocation,
-            onOpenSpliceEditor: handleOpenSpliceEditor,
-          }}
-        >
+        {/* Note: NodeActionsProvider removed - callbacks are injected via node.data prop */}
         <ReactFlow
           nodes={filteredNodes}
           edges={edgesWithCallbacks}
@@ -1693,8 +1680,37 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
         )}
 
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#e2e8f0" />
+
+        {/* Empty state - shown when canvas has no nodes */}
+        {nodes.length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+            <div className="text-center p-8 bg-white/90 backdrop-blur rounded-xl shadow-lg border max-w-md pointer-events-auto">
+              <Network className="w-16 h-16 mx-auto mb-4 text-slate-400" />
+              <h3 className="text-xl font-semibold text-slate-700 mb-2">Start Building Your Network</h3>
+              <p className="text-sm text-slate-500 mb-4">
+                Drag an <span className="font-medium text-teal-600">OLT</span> from the component palette to begin designing your fiber network.
+              </p>
+              <div className="space-y-2 text-xs text-slate-400 text-left bg-slate-50 rounded-lg p-3">
+                <p className="font-medium text-slate-500 mb-2">Keyboard shortcuts:</p>
+                <div className="grid grid-cols-2 gap-1">
+                  <span><kbd className="px-1.5 py-0.5 bg-slate-200 rounded">E</kbd> Edit node</span>
+                  <span><kbd className="px-1.5 py-0.5 bg-slate-200 rounded">G</kbd> GPS location</span>
+                  <span><kbd className="px-1.5 py-0.5 bg-slate-200 rounded">A</kbd> Add child</span>
+                  <span><kbd className="px-1.5 py-0.5 bg-slate-200 rounded">S</kbd> Splices</span>
+                  <span><kbd className="px-1.5 py-0.5 bg-slate-200 rounded">T</kbd> Trace fiber</span>
+                  <span><kbd className="px-1.5 py-0.5 bg-slate-200 rounded">Del</kbd> Delete</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowPalette(true)}
+                className="mt-4 px-4 py-2 bg-teal-500 hover:bg-teal-600 text-white rounded-lg text-sm font-medium transition-colors"
+              >
+                Open Component Palette
+              </button>
+            </div>
+          </div>
+        )}
       </ReactFlow>
-      </NodeActionsProvider>
       </div>
 
       {/* Unified Splice Editor */}
@@ -1702,10 +1718,11 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
         <UnifiedSpliceEditor
           isOpen={true}
           onClose={() => setSpliceEditor(null)}
-          edgeId={spliceEditor.edgeId}
+          nodeId={spliceEditor.nodeId}
+          nodeName={spliceEditor.nodeName}
           trayId={spliceEditor.trayId}
-          cableA={spliceEditor.cableA}
-          cableB={spliceEditor.cableB}
+          incomingCables={spliceEditor.incomingCables}
+          outgoingCables={spliceEditor.outgoingCables}
         />
       )}
 
