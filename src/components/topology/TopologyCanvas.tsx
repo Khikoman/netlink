@@ -637,19 +637,34 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
           nap: "#3b82f6",
         };
 
+        const newEdgeId = `e-${connection.source}-${connection.target}`;
         const newEdge: Edge = {
-          id: `e-${connection.source}-${connection.target}`,
+          id: newEdgeId,
           source: connection.source,
           target: connection.target,
           type: "fiber",
           data: {
             sourceColor: sourceColors[sourceType] || "#a855f7",
             targetColor: targetColors[targetType] || "#a855f7",
-            cable: { name: "New Link", fiberCount: 12 },
+            cable: { name: "New Cable", fiberCount: 48 }, // Default 48F, user will configure
+            isNew: true, // Flag for UI to show "configure" prompt
           },
         };
 
         setEdges((eds) => addEdge(newEdge, eds));
+
+        // Auto-open cable config dialog for the new connection
+        // Small delay to ensure edge is rendered first
+        setTimeout(() => {
+          setCableConfigPanel({
+            edgeId: newEdgeId,
+            config: {
+              name: "New Cable",
+              fiberCount: 48,
+              length: undefined,
+            },
+          });
+        }, 100);
       } catch (err) {
         console.error("Failed to create connection:", err);
       }

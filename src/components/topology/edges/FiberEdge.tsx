@@ -25,6 +25,7 @@ interface FiberEdgeData {
   targetColor?: string;
   animated?: boolean;
   isHighlighted?: boolean;
+  isNew?: boolean; // Flag for newly created edges that need configuration
   cable?: {
     name: string;
     fiberCount: number;
@@ -191,19 +192,28 @@ function FiberEdgeComponent({
                   e.stopPropagation();
                   onOpenCableConfig?.(id);
                 }}
-                className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium hover:bg-amber-50 transition-colors group"
-                title="Click to edit cable (fiber count, name, length)"
+                className={`
+                  flex items-center gap-1.5 px-2 py-1 text-xs font-medium transition-colors group
+                  ${data?.isNew || data?.cable?.name === "New Cable"
+                    ? "bg-amber-100 hover:bg-amber-200 animate-pulse"
+                    : "hover:bg-amber-50"}
+                `}
+                title="Click to configure cable (fiber count, name, length)"
               >
                 <Cable className="w-3.5 h-3.5 text-amber-500" />
                 <span className="text-amber-600 font-bold">
                   {data?.cable?.fiberCount || fiberCount || 48}F
                 </span>
-                {data?.cable?.name && data.cable.name !== `${data.cable.fiberCount}F` && (
+                {data?.cable?.name && data.cable.name !== "New Cable" && data.cable.name !== `${data.cable.fiberCount}F` && (
                   <span className="text-gray-500 text-[10px]">
                     {data.cable.name}
                   </span>
                 )}
-                <Settings2 className="w-3 h-3 text-gray-300 group-hover:text-amber-500 transition-colors" />
+                {(data?.isNew || data?.cable?.name === "New Cable") ? (
+                  <span className="text-amber-600 text-[10px] font-medium">← Configure</span>
+                ) : (
+                  <Settings2 className="w-3 h-3 text-gray-300 group-hover:text-amber-500 transition-colors" />
+                )}
               </button>
 
               {/* Expand/splice info button */}
