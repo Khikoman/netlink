@@ -580,6 +580,36 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     []
   );
 
+  // Smart default fiber counts based on FTTH network hierarchy
+  const getDefaultFiberCount = useCallback((sourceType: string, targetType: string): number => {
+    const key = `${sourceType}-${targetType}`;
+    const defaults: Record<string, number> = {
+      "olt-odf": 16,        // PON port count (typical 16-port OLT)
+      "olt-closure": 96,    // Trunk cable from CO
+      "olt-lcp": 48,        // Direct trunk to LCP
+      "odf-closure": 72,    // Main trunk/feeder cable
+      "closure-closure": 48, // Distribution cable between closures
+      "closure-lcp": 24,    // Feeder cable to LCP
+      "lcp-nap": 12,        // Drop cable to NAP
+    };
+    return defaults[key] || 48; // Fallback to 48F
+  }, []);
+
+  // Get cable role/name based on connection type
+  const getDefaultCableName = useCallback((sourceType: string, targetType: string): string => {
+    const key = `${sourceType}-${targetType}`;
+    const names: Record<string, string> = {
+      "olt-odf": "PON Patch",
+      "olt-closure": "Trunk",
+      "olt-lcp": "Trunk",
+      "odf-closure": "Feeder",
+      "closure-closure": "Distribution",
+      "closure-lcp": "Feeder",
+      "lcp-nap": "Drop",
+    };
+    return names[key] || "Cable";
+  }, []);
+
   // Validate and handle new connections between nodes
   const onConnect = useCallback(
     async (connection: Connection) => {
@@ -603,6 +633,10 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
         console.warn(`Invalid connection: ${sourceType} → ${targetType}`);
         return;
       }
+
+      // Get smart defaults based on connection type
+      const defaultFiberCount = getDefaultFiberCount(sourceType, targetType);
+      const defaultCableName = getDefaultCableName(sourceType, targetType);
 
       // Update the target node's parent reference in the database
       try {
@@ -646,21 +680,20 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
           data: {
             sourceColor: sourceColors[sourceType] || "#a855f7",
             targetColor: targetColors[targetType] || "#a855f7",
-            cable: { name: "New Cable", fiberCount: 48 }, // Default 48F, user will configure
+            cable: { name: defaultCableName, fiberCount: defaultFiberCount },
             isNew: true, // Flag for UI to show "configure" prompt
           },
         };
 
         setEdges((eds) => addEdge(newEdge, eds));
 
-        // Auto-open cable config dialog for the new connection
-        // Small delay to ensure edge is rendered first
+        // Auto-open cable config dialog for the new connection with smart defaults
         setTimeout(() => {
           setCableConfigPanel({
             edgeId: newEdgeId,
             config: {
-              name: "New Cable",
-              fiberCount: 48,
+              name: defaultCableName,
+              fiberCount: defaultFiberCount,
               length: undefined,
             },
           });
@@ -669,7 +702,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
         console.error("Failed to create connection:", err);
       }
     },
-    [projectId, setEdges]
+    [projectId, setEdges, getDefaultFiberCount, getDefaultCableName]
   );
 
   // Close context menu on click outside
@@ -1444,6 +1477,23 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     const hasHighlight = highlightedPath.nodeIds.size > 0;
     return nodes.map((node) => {
       const isHighlighted = highlightedPath.nodeIds.has(node.id);
+
+      // Calculate incoming/outgoing fiber counts for this node
+      const incomingFibers = edges
+        .filter(e => e.target === node.id)
+        .reduce((sum, e) => {
+          // Get fiber count from database-driven edgeCablesMap first, then fall back to edge.data
+          const dbCable = edgeCablesMap?.get(e.id)?.[0];
+          return sum + (dbCable?.fiberCount || e.data?.cable?.fiberCount || 0);
+        }, 0);
+      const outgoingFibers = edges
+        .filter(e => e.source === node.id)
+        .reduce((sum, e) => {
+          const dbCable = edgeCablesMap?.get(e.id)?.[0];
+          return sum + (dbCable?.fiberCount || e.data?.cable?.fiberCount || 0);
+        }, 0);
+      const cableCount = edges.filter(e => e.source === node.id || e.target === node.id).length;
+
       return {
         ...node,
         data: {
@@ -1459,6 +1509,10 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
           onOpenSpliceMatrix: handleOpenSpliceEditorFromNode,
           onTracePath: handleOpenFiberPath,
           isHighlighted,
+          // Fiber summary data for node display
+          incomingFibers,
+          outgoingFibers,
+          cableCount,
         },
         style: {
           ...node.style,
@@ -1473,7 +1527,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
         },
       };
     });
-  }, [nodes, debouncedSearchQuery, highlightedPath.nodeIds, handleNodeAddChild, handleNodeEdit, handleNodeDelete, handleNodeDuplicate, handleNodeSetLocation, handleNodeInfo, handleOpenPortManager, handleOpenSpliceEditorFromNode, handleOpenFiberPath]);
+  }, [nodes, edges, edgeCablesMap, debouncedSearchQuery, highlightedPath.nodeIds, handleNodeAddChild, handleNodeEdit, handleNodeDelete, handleNodeDuplicate, handleNodeSetLocation, handleNodeInfo, handleOpenPortManager, handleOpenSpliceEditorFromNode, handleOpenFiberPath]);
 
   // Inject action callbacks into edge data AND apply path highlighting
   // Phase 2: Merge database-driven cable/splice data into edges

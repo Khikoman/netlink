@@ -52,6 +52,10 @@ interface BaseNodeData {
   nodeType?: NodeType;
   expanded?: boolean;
   isHighlighted?: boolean;
+  // Fiber summary (calculated in TopologyCanvas from edge data)
+  incomingFibers?: number;
+  outgoingFibers?: number;
+  cableCount?: number;
   // Action callbacks (passed from TopologyCanvas via node.data)
   onAddChild?: (nodeId: string, nodeType: string) => void;
   onEdit?: (nodeId: string, nodeType: string) => void;
@@ -241,6 +245,26 @@ function ExpandableClosureNodeComponent({ data, selected, id }: NodeProps<BaseNo
             <div className="text-sm font-semibold text-gray-800 truncate">
               {data.label}
             </div>
+            {/* Fiber summary - shows incoming/outgoing fiber counts */}
+            {(data.incomingFibers !== undefined && data.incomingFibers > 0) ||
+             (data.outgoingFibers !== undefined && data.outgoingFibers > 0) ? (
+              <div className="flex items-center gap-1 mt-0.5 text-[10px] text-gray-500">
+                {data.incomingFibers !== undefined && data.incomingFibers > 0 && (
+                  <span className="bg-blue-100 text-blue-700 px-1 py-0.5 rounded font-medium">
+                    {data.incomingFibers}F in
+                  </span>
+                )}
+                {data.incomingFibers !== undefined && data.incomingFibers > 0 &&
+                 data.outgoingFibers !== undefined && data.outgoingFibers > 0 && (
+                  <span className="text-gray-400">→</span>
+                )}
+                {data.outgoingFibers !== undefined && data.outgoingFibers > 0 && (
+                  <span className="bg-green-100 text-green-700 px-1 py-0.5 rounded font-medium">
+                    {data.outgoingFibers}F out
+                  </span>
+                )}
+              </div>
+            ) : null}
           </div>
 
           {/* Expand button */}
@@ -737,6 +761,26 @@ function BasicNodeComponent({ data, selected, id }: NodeProps<BaseNodeData>) {
           <div className="text-sm font-semibold text-gray-800 truncate">
             {data.label}
           </div>
+          {/* Fiber summary - shows incoming/outgoing fiber counts */}
+          {(data.incomingFibers !== undefined && data.incomingFibers > 0) ||
+           (data.outgoingFibers !== undefined && data.outgoingFibers > 0) ? (
+            <div className="flex items-center gap-1 mt-0.5 text-[10px] text-gray-500">
+              {data.incomingFibers !== undefined && data.incomingFibers > 0 && (
+                <span className="bg-blue-100 text-blue-700 px-1 py-0.5 rounded font-medium">
+                  {data.incomingFibers}F in
+                </span>
+              )}
+              {data.incomingFibers !== undefined && data.incomingFibers > 0 &&
+               data.outgoingFibers !== undefined && data.outgoingFibers > 0 && (
+                <span className="text-gray-400">→</span>
+              )}
+              {data.outgoingFibers !== undefined && data.outgoingFibers > 0 && (
+                <span className="bg-green-100 text-green-700 px-1 py-0.5 rounded font-medium">
+                  {data.outgoingFibers}F out
+                </span>
+              )}
+            </div>
+          ) : null}
         </div>
       </div>
 
