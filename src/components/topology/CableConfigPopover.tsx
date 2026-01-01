@@ -23,8 +23,9 @@ interface CableConfigPopoverProps {
   onSave: (edgeId: string, config: CableConfig) => void;
 }
 
-// Standard fiber counts from TIA-598
-const FIBER_COUNT_OPTIONS = CABLE_CONFIGS.map(c => c.count);
+// Common fiber counts - first row popular, second row all standard
+const POPULAR_FIBER_COUNTS = [2, 4, 6, 8, 12, 24, 48, 72, 96];
+const ALL_FIBER_COUNTS = CABLE_CONFIGS.map(c => c.count);
 
 export const CableConfigPopover = memo(function CableConfigPopover({
   isOpen,
@@ -48,6 +49,8 @@ export const CableConfigPopover = memo(function CableConfigPopover({
   const [isDragging, setIsDragging] = useState(false);
   const [name, setName] = useState(initialConfig.name);
   const [fiberCount, setFiberCount] = useState(initialConfig.fiberCount);
+  const [customFiberCount, setCustomFiberCount] = useState("");
+  const [showAllCounts, setShowAllCounts] = useState(false);
   const [length, setLength] = useState(initialConfig.length || 0);
   const dragOffset = useRef({ x: 0, y: 0 });
   const panelRef = useRef<HTMLDivElement>(null);
@@ -161,17 +164,28 @@ export const CableConfigPopover = memo(function CableConfigPopover({
 
         {/* Fiber Count */}
         <div>
-          <label className="block text-xs font-medium text-gray-800 mb-2">
-            Fiber Count
-          </label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-medium text-gray-800">
+              Fiber Count
+            </label>
+            <button
+              onClick={() => setShowAllCounts(!showAllCounts)}
+              className="text-xs text-blue-500 hover:text-blue-700"
+            >
+              {showAllCounts ? "Show Less" : "Show All"}
+            </button>
+          </div>
           <div className="grid grid-cols-3 gap-2">
-            {FIBER_COUNT_OPTIONS.map((count) => (
+            {(showAllCounts ? ALL_FIBER_COUNTS : POPULAR_FIBER_COUNTS).map((count) => (
               <button
                 key={count}
-                onClick={() => setFiberCount(count)}
+                onClick={() => {
+                  setFiberCount(count);
+                  setCustomFiberCount("");
+                }}
                 className={`
                   px-3 py-2 text-sm font-medium rounded-lg border-2 transition-all
-                  ${fiberCount === count
+                  ${fiberCount === count && !customFiberCount
                     ? "border-amber-500 bg-amber-50 text-amber-700"
                     : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50"
                   }
@@ -180,6 +194,28 @@ export const CableConfigPopover = memo(function CableConfigPopover({
                 {count}F
               </button>
             ))}
+          </div>
+          {/* Custom fiber count input */}
+          <div className="mt-2 flex items-center gap-2">
+            <span className="text-xs text-gray-500">Custom:</span>
+            <input
+              type="number"
+              value={customFiberCount}
+              onChange={(e) => {
+                const val = e.target.value;
+                setCustomFiberCount(val);
+                const num = parseInt(val);
+                if (num > 0) setFiberCount(num);
+              }}
+              placeholder="Any count"
+              min={1}
+              max={9999}
+              className={`
+                flex-1 px-2 py-1 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500
+                ${customFiberCount ? "border-amber-500 bg-amber-50" : "border-gray-300"}
+              `}
+            />
+            <span className="text-xs text-gray-500">fibers</span>
           </div>
         </div>
 

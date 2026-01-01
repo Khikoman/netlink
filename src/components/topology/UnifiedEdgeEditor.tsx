@@ -156,8 +156,11 @@ export function UnifiedEdgeEditor({
     }
   }, [isOpen, initialFiberCount, initialCableName, initialLength, initialSplices]);
 
-  // Fiber count options
-  const fiberOptions = CABLE_CONFIGS.map(c => c.count);
+  // Fiber count options - popular counts plus all standard
+  const popularFiberCounts = [2, 4, 6, 8, 12, 24, 48, 72, 96, 144, 288];
+  const allFiberCounts = CABLE_CONFIGS.map(c => c.count);
+  const [customFiberInput, setCustomFiberInput] = useState("");
+  const [showCustomFiber, setShowCustomFiber] = useState(false);
 
   // Get connected fibers
   const connectedSources = useMemo(() => new Set(splices.map(s => s.sourceIndex)), [splices]);
@@ -351,18 +354,52 @@ export function UnifiedEdgeEditor({
         <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Fibers</label>
-            <select
-              value={fiberCount}
-              onChange={(e) => {
-                setFiberCount(Number(e.target.value));
-                setSplices([]); // Reset splices when fiber count changes
-              }}
-              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
-            >
-              {fiberOptions.map(count => (
-                <option key={count} value={count}>{count}F</option>
-              ))}
-            </select>
+            {!showCustomFiber ? (
+              <div className="flex gap-1">
+                <select
+                  value={popularFiberCounts.includes(fiberCount) ? fiberCount : "custom"}
+                  onChange={(e) => {
+                    if (e.target.value === "custom") {
+                      setShowCustomFiber(true);
+                      setCustomFiberInput(String(fiberCount));
+                    } else {
+                      setFiberCount(Number(e.target.value));
+                      setSplices([]); // Reset splices when fiber count changes
+                    }
+                  }}
+                  className="flex-1 px-2 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+                >
+                  {popularFiberCounts.map(count => (
+                    <option key={count} value={count}>{count}F</option>
+                  ))}
+                  <option value="custom">Custom...</option>
+                </select>
+              </div>
+            ) : (
+              <div className="flex gap-1">
+                <input
+                  type="number"
+                  value={customFiberInput}
+                  onChange={(e) => {
+                    setCustomFiberInput(e.target.value);
+                    const num = parseInt(e.target.value);
+                    if (num > 0) {
+                      setFiberCount(num);
+                      setSplices([]); // Reset splices
+                    }
+                  }}
+                  placeholder="Count"
+                  min={1}
+                  className="flex-1 px-2 py-2 text-sm border border-amber-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 bg-amber-50"
+                />
+                <button
+                  onClick={() => setShowCustomFiber(false)}
+                  className="px-2 text-xs text-gray-500 hover:text-gray-700"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>

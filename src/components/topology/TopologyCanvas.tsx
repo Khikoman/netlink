@@ -733,7 +733,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
           const cableId = await db.cables.add({
             projectId,
             name: defaultCableName,
-            fiberCount: defaultFiberCount as 12 | 24 | 48 | 96 | 144 | 216 | 288,
+            fiberCount: defaultFiberCount,
             fiberType: "singlemode",
           }) as number;
 
@@ -1250,7 +1250,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
           const cableId = await db.cables.add({
             projectId,
             name: cableName,
-            fiberCount: fiberCount as 12 | 24 | 48 | 96 | 144 | 216 | 288,
+            fiberCount: fiberCount,
             fiberType: "singlemode",
           }) as number;
           await createEdgeCable(edge.id, cableId);
@@ -1278,7 +1278,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
           const cableId = await db.cables.add({
             projectId,
             name: cableName,
-            fiberCount: fiberCount as 12 | 24 | 48 | 96 | 144 | 216 | 288,
+            fiberCount: fiberCount,
             fiberType: "singlemode",
           }) as number;
           await createEdgeCable(edge.id, cableId);
@@ -1395,7 +1395,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
       if (existingCable?.id) {
         await db.cables.update(existingCable.id, {
           name: config.cableName,
-          fiberCount: config.fiberCount as 12 | 24 | 48 | 96 | 144 | 216 | 288,
+          fiberCount: config.fiberCount,
           lengthMeters: config.length,
         });
         cableId = existingCable.id;
@@ -1403,7 +1403,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
         cableId = await db.cables.add({
           projectId,
           name: config.cableName,
-          fiberCount: config.fiberCount as 12 | 24 | 48 | 96 | 144 | 216 | 288,
+          fiberCount: config.fiberCount,
           fiberType: "singlemode",
           lengthMeters: config.length,
         }) as number;
@@ -1520,7 +1520,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
         // Update existing cable record
         await db.cables.update(existingCable.id, {
           name: config.name,
-          fiberCount: config.fiberCount as 12 | 24 | 48 | 96 | 144 | 216 | 288,
+          fiberCount: config.fiberCount,
           lengthMeters: config.length,
         });
       } else {
@@ -1528,7 +1528,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
         const cableId = await db.cables.add({
           projectId,
           name: config.name,
-          fiberCount: config.fiberCount as 12 | 24 | 48 | 96 | 144 | 216 | 288,
+          fiberCount: config.fiberCount,
           fiberType: "singlemode",
           lengthMeters: config.length,
         }) as number;

@@ -23,15 +23,24 @@ export const FIBER_COLORS: FiberColor[] = [
 // Buffer tube colors follow the same sequence
 export const TUBE_COLORS = FIBER_COLORS;
 
-// Cable configurations
+// Cable configurations - standard industry fiber counts
 export const CABLE_CONFIGS = [
+  { count: 2, tubes: 1, fibersPerTube: 2 },
+  { count: 4, tubes: 1, fibersPerTube: 4 },
+  { count: 6, tubes: 1, fibersPerTube: 6 },
+  { count: 8, tubes: 1, fibersPerTube: 8 },
   { count: 12, tubes: 1, fibersPerTube: 12 },
   { count: 24, tubes: 2, fibersPerTube: 12 },
+  { count: 36, tubes: 3, fibersPerTube: 12 },
   { count: 48, tubes: 4, fibersPerTube: 12 },
+  { count: 72, tubes: 6, fibersPerTube: 12 },
   { count: 96, tubes: 8, fibersPerTube: 12 },
   { count: 144, tubes: 12, fibersPerTube: 12 },
   { count: 216, tubes: 18, fibersPerTube: 12 },
   { count: 288, tubes: 24, fibersPerTube: 12 },
+  { count: 432, tubes: 36, fibersPerTube: 12 },
+  { count: 576, tubes: 48, fibersPerTube: 12 },
+  { count: 864, tubes: 72, fibersPerTube: 12 },
 ];
 
 export interface FiberLookupResult {
@@ -43,18 +52,20 @@ export interface FiberLookupResult {
 }
 
 // Get fiber info from fiber number
+// Works with any fiber count, not just standard cable configs
 export function getFiberInfo(fiberNumber: number, cableCount: number): FiberLookupResult | null {
-  const config = CABLE_CONFIGS.find(c => c.count === cableCount);
-  if (!config) return null;
-
   if (fiberNumber < 1 || fiberNumber > cableCount) return null;
 
-  const tubeNumber = Math.ceil(fiberNumber / config.fibersPerTube);
-  const fiberPosition = ((fiberNumber - 1) % config.fibersPerTube) + 1;
+  // Try to find a standard config, otherwise assume 12 fibers per tube
+  const config = CABLE_CONFIGS.find(c => c.count === cableCount);
+  const fibersPerTube = config?.fibersPerTube || 12;
 
-  // For cables with more than 12 tubes, tubes repeat the color sequence
+  const tubeNumber = Math.ceil(fiberNumber / fibersPerTube);
+  const fiberPosition = ((fiberNumber - 1) % fibersPerTube) + 1;
+
+  // For cables with more than 12 tubes or fibers, colors repeat
   const tubeColorIndex = (tubeNumber - 1) % 12;
-  const fiberColorIndex = fiberPosition - 1;
+  const fiberColorIndex = (fiberPosition - 1) % 12;
 
   return {
     fiberNumber,

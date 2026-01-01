@@ -218,7 +218,7 @@ export interface Cable {
   id?: number;
   projectId?: number;
   name: string;
-  fiberCount: 12 | 24 | 48 | 96 | 144 | 216 | 288;
+  fiberCount: number; // Any fiber count (common: 2, 4, 6, 8, 12, 24, 48, 72, 96, 144, 288, etc.)
   fiberType: "singlemode" | "multimode";
   lengthMeters?: number;
   reelNumber?: string;
