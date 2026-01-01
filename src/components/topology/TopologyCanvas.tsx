@@ -151,7 +151,7 @@ function buildFlowData(
         label: "OLT-ODF Link",
         sourceColor: "#14b8a6", // teal (OLT color)
         targetColor: "#06b6d4", // cyan (ODF color)
-        cable: { name: "Patch", fiberCount: 1 },
+        cable: { name: "Patch", fiberCount: 16 },  // OLT PON ports
       },
     });
   });
@@ -194,7 +194,7 @@ function buildFlowData(
         data: {
           sourceColor: "#06b6d4", // cyan (ODF)
           targetColor: "#a855f7", // purple (Closure)
-          cable: { name: "Feeder", fiberCount: 48 },
+          cable: { name: "Feeder", fiberCount: 72 },  // Main trunk to closure
         },
       });
     } else if (enc.parentType === "olt" && enc.parentId) {
@@ -219,7 +219,7 @@ function buildFlowData(
         data: {
           sourceColor: "#a855f7", // purple
           targetColor: "#a855f7", // purple
-          cable: { name: "Dist", fiberCount: 24 },
+          cable: { name: "Dist", fiberCount: 48 },  // Distribution between closures
           animated: true, // Animated for cascading
         },
       });
@@ -257,7 +257,7 @@ function buildFlowData(
         data: {
           sourceColor: "#a855f7", // purple (Closure)
           targetColor: "#f97316", // orange (LCP)
-          cable: { name: "Dist", fiberCount: 12 },
+          cable: { name: "Dist", fiberCount: 24 },  // Feeder to LCP
         },
       });
     } else if (enc.parentType === "olt" && enc.parentId) {
@@ -306,7 +306,7 @@ function buildFlowData(
         data: {
           sourceColor: "#f97316", // orange (LCP)
           targetColor: "#3b82f6", // blue (NAP)
-          cable: { name: "Drop", fiberCount: 4 },
+          cable: { name: "Drop", fiberCount: 12 },  // Drop cable to NAP
           animated: true, // Show active customer drop
         },
       });
