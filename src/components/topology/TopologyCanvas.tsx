@@ -61,6 +61,8 @@ import { FloatingPortManager } from "./FloatingPortManager";
 import NodeInfoDropdown from "./NodeInfoDropdown";
 import FiberPathPanel from "./FiberPathPanel";
 import { CableConfigPopover } from "./CableConfigPopover";
+import { NodeSetupModal } from "./NodeSetupModal";
+import { UnifiedEdgeEditor } from "./UnifiedEdgeEditor";
 import type { OLT, ODF, Enclosure } from "@/types";
 
 // Combine edge types
@@ -354,6 +356,23 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     napId: number;
     napName?: string;
   } | null>(null);
+  // Node setup modal state (shown when dropping new nodes)
+  const [nodeSetupModal, setNodeSetupModal] = useState<{
+    type: "olt" | "odf" | "closure" | "lcp" | "nap";
+    position: { x: number; y: number };
+    parentId?: number;
+    parentType?: string;
+  } | null>(null);
+  // Unified edge editor state (cable config + splices)
+  const [edgeEditor, setEdgeEditor] = useState<{
+    edgeId: string;
+    sourceName: string;
+    targetName: string;
+    fiberCount: number;
+    cableName: string;
+    length?: number;
+    splices: { sourceIndex: number; targetIndex: number }[];
+  } | null>(null);
   // Fiber Path Panel state
   const [fiberPathPanel, setFiberPathPanel] = useState<{
     startNodeId: string;
@@ -452,14 +471,14 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     event.dataTransfer.dropEffect = "move";
   }, []);
 
-  // Handle drop from palette to create new nodes
+  // Handle drop from palette - shows setup modal instead of creating directly
   const onDrop = useCallback(
-    async (event: React.DragEvent) => {
+    (event: React.DragEvent) => {
       event.preventDefault();
 
       if (!projectId || !reactFlowWrapper.current) return;
 
-      const type = event.dataTransfer.getData("application/reactflow");
+      const type = event.dataTransfer.getData("application/reactflow") as "olt" | "odf" | "closure" | "lcp" | "nap";
       if (!type) return;
 
       // Get drop position in flow coordinates
@@ -469,93 +488,115 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
         y: event.clientY - bounds.top,
       });
 
+      // Validate hierarchy requirements
+      if (type === "odf") {
+        const closestOlt = olts?.[0];
+        if (!closestOlt) {
+          alert("Please create an OLT first before adding ODFs");
+          return;
+        }
+        setNodeSetupModal({ type, position, parentId: closestOlt.id!, parentType: "olt" });
+      } else if (type === "closure") {
+        const parentOlt = olts?.[0];
+        if (!parentOlt) {
+          alert("Please create an OLT first before adding Closures");
+          return;
+        }
+        setNodeSetupModal({ type, position, parentId: parentOlt.id!, parentType: "olt" });
+      } else if (type === "lcp") {
+        const parentOlt = olts?.[0];
+        if (!parentOlt) {
+          alert("Please create an OLT first before adding LCPs");
+          return;
+        }
+        setNodeSetupModal({ type, position, parentId: parentOlt.id!, parentType: "olt" });
+      } else if (type === "nap") {
+        const lcpEnclosure = enclosures?.find((e) => e.type === "lcp" || e.type === "fdt");
+        if (!lcpEnclosure) {
+          alert("Please create an LCP first before adding NAPs");
+          return;
+        }
+        setNodeSetupModal({ type, position, parentId: lcpEnclosure.id!, parentType: "lcp" });
+      } else {
+        // OLT - no parent required
+        setNodeSetupModal({ type, position });
+      }
+    },
+    [projectId, reactFlowInstance, olts, enclosures]
+  );
+
+  // Handle node creation from setup modal
+  const handleNodeSetupSave = useCallback(
+    async (config: { name: string; portCount?: number; ponPorts?: number; trayCount?: number; splitterRatio?: string }) => {
+      if (!projectId || !nodeSetupModal) return;
+
+      const { type, position, parentId, parentType } = nodeSetupModal;
+
       try {
-        // Create node based on type
         if (type === "olt") {
-          // OLT is a root node - create directly
           await db.olts.add({
             projectId,
-            name: `OLT-${Date.now().toString(36).toUpperCase()}`,
-            totalPonPorts: 16,
+            name: config.name,
+            totalPonPorts: config.ponPorts || 16,
             createdAt: new Date(),
             canvasX: position.x,
             canvasY: position.y,
           });
         } else if (type === "odf") {
-          // ODF needs an OLT parent - find closest or first OLT
-          const closestOlt = olts?.[0];
-          if (!closestOlt) {
-            alert("Please create an OLT first before adding ODFs");
-            return;
-          }
           await db.odfs.add({
             projectId,
-            oltId: closestOlt.id!,
-            name: `ODF-${Date.now().toString(36).toUpperCase()}`,
-            portCount: 48,
+            oltId: parentId!,
+            name: config.name,
+            portCount: config.portCount || 48,
             createdAt: new Date(),
             canvasX: position.x,
             canvasY: position.y,
           });
         } else if (type === "closure") {
-          // Closure can be parented to OLT, ODF, or another Closure
-          // Default to first OLT if exists
-          const parentOlt = olts?.[0];
-          if (!parentOlt) {
-            alert("Please create an OLT first before adding Closures");
-            return;
-          }
           await db.enclosures.add({
             projectId,
-            name: `CL-${Date.now().toString(36).toUpperCase()}`,
+            name: config.name,
             type: "splice-closure",
-            parentType: "olt",
-            parentId: parentOlt.id!,
+            parentType: parentType as "olt" | "odf" | "closure",
+            parentId: parentId!,
             createdAt: new Date(),
             canvasX: position.x,
             canvasY: position.y,
+            // Store tray count in notes for now (could add dedicated field later)
           });
+          // Note: trayCount could be used to pre-create trays
         } else if (type === "lcp") {
-          // LCP needs an OLT or Closure parent
-          const parentOlt = olts?.[0];
-          if (!parentOlt) {
-            alert("Please create an OLT first before adding LCPs");
-            return;
-          }
           await db.enclosures.add({
             projectId,
-            name: `LCP-${Date.now().toString(36).toUpperCase()}`,
+            name: config.name,
             type: "lcp",
-            parentType: "olt",
-            parentId: parentOlt.id!,
+            parentType: parentType as "olt" | "closure",
+            parentId: parentId!,
             createdAt: new Date(),
             canvasX: position.x,
             canvasY: position.y,
+            // splitterRatio stored in notes
           });
         } else if (type === "nap") {
-          // NAP needs an LCP parent
-          const lcpEnclosure = enclosures?.find((e) => e.type === "lcp" || e.type === "fdt");
-          if (!lcpEnclosure) {
-            alert("Please create an LCP first before adding NAPs");
-            return;
-          }
           await db.enclosures.add({
             projectId,
-            name: `NAP-${Date.now().toString(36).toUpperCase()}`,
+            name: config.name,
             type: "nap",
             parentType: "lcp",
-            parentId: lcpEnclosure.id!,
+            parentId: parentId!,
             createdAt: new Date(),
             canvasX: position.x,
             canvasY: position.y,
           });
         }
+
+        setNodeSetupModal(null);
       } catch (err) {
-        console.error("Failed to create node from drop:", err);
+        console.error("Failed to create node:", err);
         alert("Failed to create node");
       }
     },
-    [projectId, reactFlowInstance, olts, enclosures]
+    [projectId, nodeSetupModal]
   );
 
   // Handle drag start from palette (no-op, just for the callback)
@@ -1286,6 +1327,152 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     }
   }, [edges, nodes, projectId]);
 
+  // Handle open unified edge editor (cable + splices) - replaces separate cable config
+  const handleOpenEdgeEditor = useCallback(async (edgeId: string) => {
+    if (!projectId) return;
+
+    const edge = edges.find(e => e.id === edgeId);
+    if (!edge) return;
+
+    // Get source and target node names
+    const sourceNode = nodes.find(n => n.id === edge.source);
+    const targetNode = nodes.find(n => n.id === edge.target);
+    const sourceName = sourceNode?.data?.label || edge.source;
+    const targetName = targetNode?.data?.label || edge.target;
+
+    // Load cable config from database
+    let fiberCount = edge.data?.cable?.fiberCount || 48;
+    let cableName = edge.data?.cable?.name || "Cable";
+    let length: number | undefined;
+
+    try {
+      const linkedCables = await getCablesByEdge(edgeId);
+      const cable = linkedCables[0];
+      if (cable) {
+        fiberCount = cable.fiberCount;
+        cableName = cable.name;
+        length = cable.lengthMeters;
+      }
+    } catch (err) {
+      console.error("Failed to load cable config:", err);
+    }
+
+    // Load existing splices from database
+    const existingSplices = splicesByEdgeMap?.get(edgeId) || [];
+    const splices = existingSplices.map(s => ({
+      sourceIndex: s.fiberA - 1, // Convert to 0-indexed
+      targetIndex: s.fiberB - 1,
+    }));
+
+    setEdgeEditor({
+      edgeId,
+      sourceName,
+      targetName,
+      fiberCount,
+      cableName,
+      length,
+      splices,
+    });
+  }, [edges, nodes, projectId, splicesByEdgeMap]);
+
+  // Handle save from unified edge editor
+  const handleSaveEdgeEditor = useCallback(async (config: {
+    fiberCount: number;
+    cableName: string;
+    length?: number;
+    splices: { sourceIndex: number; targetIndex: number }[];
+  }) => {
+    if (!projectId || !edgeEditor) return;
+
+    const { edgeId } = edgeEditor;
+
+    try {
+      // Save cable config
+      const linkedCables = await getCablesByEdge(edgeId);
+      const existingCable = linkedCables[0];
+
+      let cableId: number;
+      if (existingCable?.id) {
+        await db.cables.update(existingCable.id, {
+          name: config.cableName,
+          fiberCount: config.fiberCount as 12 | 24 | 48 | 96 | 144 | 216 | 288,
+          lengthMeters: config.length,
+        });
+        cableId = existingCable.id;
+      } else {
+        cableId = await db.cables.add({
+          projectId,
+          name: config.cableName,
+          fiberCount: config.fiberCount as 12 | 24 | 48 | 96 | 144 | 216 | 288,
+          fiberType: "singlemode",
+          lengthMeters: config.length,
+        }) as number;
+        await createEdgeCable(edgeId, cableId);
+      }
+
+      // Save splices - delete existing and create new
+      const existingSplices = await db.splices.where("edgeId").equals(edgeId).toArray();
+      for (const splice of existingSplices) {
+        if (splice.id) await db.splices.delete(splice.id);
+      }
+
+      // Create new splices with all required fields
+      for (const splice of config.splices) {
+        const fiberA = splice.sourceIndex + 1; // Convert to 1-indexed
+        const fiberB = splice.targetIndex + 1;
+        // Calculate tube and fiber colors based on TIA-598 standard
+        const tubeA = Math.floor((fiberA - 1) / 12) + 1;
+        const tubeB = Math.floor((fiberB - 1) / 12) + 1;
+        const fiberInTubeA = ((fiberA - 1) % 12) + 1;
+        const fiberInTubeB = ((fiberB - 1) % 12) + 1;
+        const tubeColors = ["blue", "orange", "green", "brown", "slate", "white", "red", "black", "yellow", "violet", "rose", "aqua"];
+        const fiberColors = ["blue", "orange", "green", "brown", "slate", "white", "red", "black", "yellow", "violet", "rose", "aqua"];
+
+        await db.splices.add({
+          trayId: 0, // Edge-based splices don't have a tray
+          edgeId,
+          cableAId: cableId,
+          cableAName: config.cableName,
+          fiberA,
+          tubeAColor: tubeColors[(tubeA - 1) % 12],
+          fiberAColor: fiberColors[(fiberInTubeA - 1) % 12],
+          cableBId: cableId,
+          cableBName: config.cableName,
+          fiberB,
+          tubeBColor: tubeColors[(tubeB - 1) % 12],
+          fiberBColor: fiberColors[(fiberInTubeB - 1) % 12],
+          spliceType: "fusion",
+          status: "completed",
+          timestamp: new Date(),
+        });
+      }
+
+      // Update React state for immediate UI feedback
+      setEdges(prevEdges => prevEdges.map(edge => {
+        if (edge.id === edgeId) {
+          return {
+            ...edge,
+            data: {
+              ...edge.data,
+              cable: {
+                name: config.cableName,
+                fiberCount: config.fiberCount,
+                length: config.length,
+              },
+              isNew: false,
+            }
+          };
+        }
+        return edge;
+      }));
+
+      setEdgeEditor(null);
+    } catch (err) {
+      console.error("Failed to save edge config:", err);
+      alert("Failed to save cable configuration");
+    }
+  }, [projectId, edgeEditor, setEdges]);
+
   // Handle open cable config popover for an edge - loads from database via junction table
   const handleOpenCableConfig = useCallback(async (edgeId: string) => {
     const edge = edges.find(e => e.id === edgeId);
@@ -1600,8 +1787,9 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
           // Database-driven splice connections
           connections: connections.length > 0 ? connections : edge.data?.connections,
           fiberCount: dbCable?.fiberCount || edge.data?.fiberCount || connections.length,
-          // Action callbacks (splice editing removed - now node-centric)
+          // Action callbacks - edge editor handles everything now
           onOpenCableConfig: handleOpenCableConfig,
+          onOpenEdgeEditor: handleOpenEdgeEditor,
           isHighlighted,
         },
         style: {
@@ -1614,7 +1802,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
         animated: edge.data?.animated || isHighlighted, // Animate highlighted edges
       };
     });
-  }, [edges, highlightedPath.edgeIds, edgeCablesMap, splicesByEdgeMap, handleOpenCableConfig]);
+  }, [edges, highlightedPath.edgeIds, edgeCablesMap, splicesByEdgeMap, handleOpenCableConfig, handleOpenEdgeEditor]);
 
   const typeIcons: Record<string, React.ReactNode> = {
     odf: <Box className="w-4 h-4" />,
@@ -1918,6 +2106,33 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
           edgeId={cableConfigPanel.edgeId}
           initialConfig={cableConfigPanel.config}
           onSave={handleSaveCableConfig}
+        />
+      )}
+
+      {/* Node Setup Modal - shown when dropping new nodes */}
+      {nodeSetupModal && (
+        <NodeSetupModal
+          isOpen={true}
+          onClose={() => setNodeSetupModal(null)}
+          nodeType={nodeSetupModal.type}
+          onSave={handleNodeSetupSave}
+          defaultName={`${nodeSetupModal.type.toUpperCase()}-${Date.now().toString(36).slice(-4).toUpperCase()}`}
+        />
+      )}
+
+      {/* Unified Edge Editor - cable properties + splices */}
+      {edgeEditor && (
+        <UnifiedEdgeEditor
+          isOpen={true}
+          onClose={() => setEdgeEditor(null)}
+          edgeId={edgeEditor.edgeId}
+          sourceName={edgeEditor.sourceName}
+          targetName={edgeEditor.targetName}
+          initialFiberCount={edgeEditor.fiberCount}
+          initialCableName={edgeEditor.cableName}
+          initialLength={edgeEditor.length}
+          initialSplices={edgeEditor.splices}
+          onSave={handleSaveEdgeEditor}
         />
       )}
 

@@ -6,7 +6,7 @@ import {
   getBezierPath,
   EdgeLabelRenderer,
 } from "reactflow";
-import { Cable, ChevronDown, ChevronUp, Check, AlertCircle, Settings2, Zap } from "lucide-react";
+import { Cable, ChevronDown, ChevronUp, Check, AlertCircle, Settings2, Zap, Edit3 } from "lucide-react";
 import { FIBER_COLORS } from "@/lib/fiberColors";
 
 interface FiberConnection {
@@ -32,8 +32,9 @@ interface FiberEdgeData {
     role?: string;
     length?: number;
   };
-  // Action callback (passed from TopologyCanvas via edge.data)
+  // Action callbacks (passed from TopologyCanvas via edge.data)
   onOpenCableConfig?: (edgeId: string) => void;
+  onOpenEdgeEditor?: (edgeId: string) => void;
 }
 
 // Get hex color from color name
@@ -63,8 +64,9 @@ function FiberEdgeComponent({
   selected,
 }: EdgeProps<FiberEdgeData>) {
   const [isExpanded, setIsExpanded] = useState(false);
-  // Read callback from edge data (passed from TopologyCanvas)
+  // Read callbacks from edge data (passed from TopologyCanvas)
   const onOpenCableConfig = data?.onOpenCableConfig;
+  const onOpenEdgeEditor = data?.onOpenEdgeEditor;
 
   // Calculate path
   const [edgePath, labelX, labelY] = getBezierPath({
@@ -216,30 +218,39 @@ function FiberEdgeComponent({
                 )}
               </button>
 
-              {/* Expand/splice info button */}
+              {/* Edit splices button - opens unified edge editor */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenEdgeEditor?.(id);
+                }}
+                className="flex items-center gap-1 px-2 py-1 text-xs font-medium hover:bg-blue-50 transition-colors border-l border-gray-200 group"
+                title="Edit cable properties and splices"
+              >
+                <Edit3 className="w-3 h-3 text-blue-400 group-hover:text-blue-600" />
+                {hasFiberData && (
+                  <div className="flex items-center gap-1">
+                    {connectionStats.completed > 0 && (
+                      <span className="flex items-center gap-0.5 text-green-600">
+                        <Check className="w-2.5 h-2.5" />
+                        <span className="text-[10px]">{connectionStats.completed}</span>
+                      </span>
+                    )}
+                    {connectionStats.pending > 0 && (
+                      <span className="flex items-center gap-0.5 text-amber-600">
+                        <AlertCircle className="w-2.5 h-2.5" />
+                        <span className="text-[10px]">{connectionStats.pending}</span>
+                      </span>
+                    )}
+                  </div>
+                )}
+              </button>
+
+              {/* Expand/collapse details button */}
               <button
                 onClick={handleToggle}
-                className="flex items-center gap-1.5 px-1.5 py-1 text-xs font-medium hover:bg-gray-50 transition-colors border-l border-gray-200 rounded-r-full"
+                className="flex items-center px-1.5 py-1 text-xs font-medium hover:bg-gray-50 transition-colors border-l border-gray-200 rounded-r-full"
               >
-                {hasFiberData && (
-                  <>
-                    {/* Inline splice count indicators */}
-                    <div className="flex items-center gap-1">
-                      {connectionStats.completed > 0 && (
-                        <span className="flex items-center gap-0.5 text-green-600">
-                          <Check className="w-2.5 h-2.5" />
-                          <span className="text-[10px]">{connectionStats.completed}</span>
-                        </span>
-                      )}
-                      {connectionStats.pending > 0 && (
-                        <span className="flex items-center gap-0.5 text-amber-600">
-                          <AlertCircle className="w-2.5 h-2.5" />
-                          <span className="text-[10px]">{connectionStats.pending}</span>
-                        </span>
-                      )}
-                    </div>
-                  </>
-                )}
                 <ChevronDown className="w-3 h-3 text-gray-400" />
               </button>
             </div>
@@ -253,20 +264,31 @@ function FiberEdgeComponent({
             >
               {/* Header */}
               <div className="flex items-center justify-between mb-2 pb-2 border-b">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenCableConfig?.(id);
-                  }}
-                  className="flex items-center gap-1.5 hover:bg-amber-50 rounded px-1 py-0.5 transition-colors"
-                  title="Configure cable"
-                >
-                  <Cable className="w-3.5 h-3.5 text-amber-500" />
-                  <span className="text-xs font-semibold text-gray-700">
-                    {data?.cable?.name || `${data?.cable?.fiberCount || fiberCount || 48}F Cable`}
-                  </span>
-                  <Settings2 className="w-3 h-3 text-gray-400" />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenCableConfig?.(id);
+                    }}
+                    className="flex items-center gap-1.5 hover:bg-amber-50 rounded px-1 py-0.5 transition-colors"
+                    title="Configure cable"
+                  >
+                    <Cable className="w-3.5 h-3.5 text-amber-500" />
+                    <span className="text-xs font-semibold text-gray-700">
+                      {data?.cable?.name || `${data?.cable?.fiberCount || fiberCount || 48}F Cable`}
+                    </span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenEdgeEditor?.(id);
+                    }}
+                    className="p-1 hover:bg-blue-50 rounded transition-colors"
+                    title="Edit splices"
+                  >
+                    <Edit3 className="w-3 h-3 text-blue-500" />
+                  </button>
+                </div>
                 <button
                   onClick={handleToggle}
                   className="p-1 hover:bg-gray-100 rounded transition-colors"
