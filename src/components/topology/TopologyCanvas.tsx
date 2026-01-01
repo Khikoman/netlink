@@ -687,6 +687,21 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
 
         setEdges((eds) => addEdge(newEdge, eds));
 
+        // Create cable record in database so splice editor can find it
+        try {
+          const cableId = await db.cables.add({
+            projectId,
+            name: defaultCableName,
+            fiberCount: defaultFiberCount as 12 | 24 | 48 | 96 | 144 | 216 | 288,
+            fiberType: "singlemode",
+          }) as number;
+
+          // Link cable to edge via junction table
+          await createEdgeCable(newEdgeId, cableId);
+        } catch (cableErr) {
+          console.error("Failed to create cable record:", cableErr);
+        }
+
         // Auto-open cable config dialog for the new connection with smart defaults
         setTimeout(() => {
           setCableConfigPanel({
@@ -1335,13 +1350,30 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
         await createEdgeCable(edgeId, cableId);
       }
 
-      // No need to manually update React state - useLiveQuery in useEdgeCablesMap
-      // will automatically trigger re-render with fresh data from database
+      // Also update React state for immediate UI update (useLiveQuery may have slight delay)
+      setEdges(prevEdges => prevEdges.map(edge => {
+        if (edge.id === edgeId) {
+          return {
+            ...edge,
+            data: {
+              ...edge.data,
+              cable: {
+                name: config.name,
+                fiberCount: config.fiberCount,
+                length: config.length,
+              },
+              isNew: false, // Remove the "new" flag
+            }
+          };
+        }
+        return edge;
+      }));
+
       setCableConfigPanel(null);
     } catch (err) {
       console.error("Failed to save cable config:", err);
     }
-  }, [projectId]);
+  }, [projectId, setEdges]);
 
   // Handle keyboard shortcuts
   useEffect(() => {

@@ -147,7 +147,7 @@ export const CableConfigPopover = memo(function CableConfigPopover({
       <div className="p-4 space-y-4" data-no-drag>
         {/* Cable Name */}
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">
+          <label className="block text-xs font-medium text-gray-800 mb-1">
             Cable Name
           </label>
           <input
@@ -161,7 +161,7 @@ export const CableConfigPopover = memo(function CableConfigPopover({
 
         {/* Fiber Count */}
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-2">
+          <label className="block text-xs font-medium text-gray-800 mb-2">
             Fiber Count
           </label>
           <div className="grid grid-cols-3 gap-2">
@@ -185,7 +185,7 @@ export const CableConfigPopover = memo(function CableConfigPopover({
 
         {/* Cable Length */}
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">
+          <label className="block text-xs font-medium text-gray-800 mb-1">
             Length (meters)
           </label>
           <input
