@@ -64,7 +64,6 @@ interface BaseNodeData {
   onSetLocation?: (nodeId: string, nodeType: string) => void;
   onInfo?: (nodeId: string, nodeType: string, dbId: number) => void;
   onManagePorts?: (nodeId: string, nodeType: string, dbId: number) => void;
-  onOpenSpliceMatrix?: (nodeId: string, nodeType: string, dbId: number) => void;
   onTracePath?: (nodeId: string, nodeType: string, dbId: number) => void;
 }
 
@@ -119,7 +118,7 @@ function ExpandableClosureNodeComponent({ data, selected, id }: NodeProps<BaseNo
   const [isExpanded, setIsExpanded] = useState(data.expanded || false);
   const style = nodeStyles[data.type] || nodeStyles.closure;
   // Read callbacks from data prop (passed from TopologyCanvas)
-  const { onAddChild, onEdit, onDelete, onSetLocation, onInfo, onOpenSpliceMatrix, onTracePath, isHighlighted } = data;
+  const { onAddChild, onEdit, onDelete, onSetLocation, onInfo, onTracePath, isHighlighted } = data;
 
   // Fetch trays and splices for this closure
   const trays = useLiveQuery(
@@ -190,14 +189,6 @@ function ExpandableClosureNodeComponent({ data, selected, id }: NodeProps<BaseNo
         >
           <Plus className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">Add</span>
-        </button>
-        <button
-          className="p-1.5 rounded-md bg-purple-500 hover:bg-purple-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
-          title="Open Splice Matrix"
-          onClick={(e) => { e.stopPropagation(); data.dbId && onOpenSpliceMatrix?.(id, data.type, data.dbId); }}
-        >
-          <Link2 className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Splices</span>
         </button>
         <button
           className="p-1.5 rounded-md bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
@@ -295,132 +286,12 @@ function ExpandableClosureNodeComponent({ data, selected, id }: NodeProps<BaseNo
         )}
       </div>
 
-      {/* Expanded content - splice summary with button */}
-      {isExpanded && data.dbId && (
-        <div className={`px-4 pb-3 border-t border-purple-200 ${style.expandedBg}`}>
-          <div className="pt-3">
-            <ExpandedSpliceSummary
-              enclosureId={data.dbId}
-              onOpenSpliceEditor={() => {
-                data.dbId && onOpenSpliceMatrix?.(id, data.type, data.dbId);
-              }}
-            />
-          </div>
-        </div>
-      )}
-
       {/* Bottom handle - for outgoing connections */}
       <Handle
         type="source"
         position={Position.Bottom}
         className={`${handleBaseStyle} ${handleColors[data.type] || handleColors.closure}`}
       />
-    </div>
-  );
-}
-
-// Helper to find color hex from color name
-function getColorHex(colorName: string): string {
-  const color = FIBER_COLORS.find(
-    c => c.name.toLowerCase() === colorName.toLowerCase()
-  );
-  return color?.hex || "#9ca3af"; // default gray
-}
-
-// Sub-component for tray section
-// Expanded splice summary component - shows splice count and button to open editor
-function ExpandedSpliceSummary({ enclosureId, onOpenSpliceEditor }: { enclosureId: number; onOpenSpliceEditor: () => void }) {
-  const trays = useLiveQuery(
-    () => db.trays.where("enclosureId").equals(enclosureId).toArray(),
-    [enclosureId]
-  );
-
-  const spliceCount = useLiveQuery(
-    async () => {
-      if (!trays || trays.length === 0) return 0;
-      let count = 0;
-      for (const tray of trays) {
-        if (tray.id) {
-          const splices = await db.splices.where("trayId").equals(tray.id).count();
-          count += splices;
-        }
-      }
-      return count;
-    },
-    [trays]
-  );
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="text-xs text-gray-600">
-          <span className="font-medium">{trays?.length || 0}</span> tray{(trays?.length || 0) !== 1 ? "s" : ""} •
-          <span className="font-medium ml-1">{spliceCount || 0}</span> splice{(spliceCount || 0) !== 1 ? "s" : ""}
-        </div>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenSpliceEditor();
-          }}
-          className="px-2 py-1 text-xs bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded transition-colors flex items-center gap-1"
-        >
-          <Zap className="w-3 h-3" />
-          Edit Splices
-        </button>
-      </div>
-      {/* Show first few trays */}
-      {trays?.slice(0, 2).map((tray) => (
-        <TraySection key={tray.id} trayId={tray.id!} trayNumber={tray.number} />
-      ))}
-      {trays && trays.length > 2 && (
-        <div className="text-[10px] text-gray-400 text-center">
-          +{trays.length - 2} more tray{trays.length - 2 !== 1 ? "s" : ""}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TraySection({ trayId, trayNumber }: { trayId: number; trayNumber: number }) {
-  const splices = useLiveQuery(
-    () => db.splices.where("trayId").equals(trayId).toArray(),
-    [trayId]
-  );
-
-  return (
-    <div className="bg-white/50 rounded p-2">
-      <div className="text-xs font-medium text-gray-600 mb-1.5">
-        Tray {trayNumber} ({splices?.length || 0} splices)
-      </div>
-      <div className="flex flex-wrap gap-1">
-        {splices?.slice(0, 12).map((splice) => {
-          // Use stored fiber colors from splice record
-          const fiberAColor = getColorHex(splice.fiberAColor);
-          const fiberBColor = getColorHex(splice.fiberBColor);
-          return (
-            <div
-              key={splice.id}
-              className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] bg-white border"
-              title={`${splice.cableAName} F${splice.fiberA} ↔ ${splice.cableBName} F${splice.fiberB}`}
-            >
-              <span
-                className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: fiberAColor }}
-              />
-              <span className="text-gray-400">↔</span>
-              <span
-                className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: fiberBColor }}
-              />
-            </div>
-          );
-        })}
-        {splices && splices.length > 12 && (
-          <span className="text-[10px] text-gray-400 px-1">
-            +{splices.length - 12} more
-          </span>
-        )}
-      </div>
     </div>
   );
 }
@@ -647,12 +518,10 @@ function BasicNodeComponent({ data, selected, id }: NodeProps<BaseNodeData>) {
   const showTopHandle = data.type !== "olt";
   const showBottomHandle = data.type !== "nap";
   // Read callbacks from data prop (passed from TopologyCanvas)
-  const { onAddChild, onEdit, onDelete, onDuplicate, onSetLocation, onInfo, onOpenSpliceMatrix, onTracePath, isHighlighted } = data;
+  const { onAddChild, onEdit, onDelete, onDuplicate, onSetLocation, onInfo, onTracePath, isHighlighted } = data;
 
   // Determine which child types this node can have
   const canHaveChildren = ["olt", "odf", "closure", "lcp"].includes(data.type);
-  // ODF and LCP can have splices
-  const canHaveSplices = ["odf", "lcp"].includes(data.type);
   // All nodes can be deleted (OLT deletion will cascade to all children)
   const canDelete = true;
 
@@ -695,16 +564,6 @@ function BasicNodeComponent({ data, selected, id }: NodeProps<BaseNodeData>) {
           >
             <Plus className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Add</span>
-          </button>
-        )}
-        {canHaveSplices && (
-          <button
-            className="p-1.5 rounded-md bg-purple-500 hover:bg-purple-600 text-white text-xs font-medium flex items-center gap-1 transition-all hover:scale-105"
-            title={data.type === "odf" ? "Patch Panel" : "Splices"}
-            onClick={(e) => { e.stopPropagation(); data.dbId && onOpenSpliceMatrix?.(id, data.type, data.dbId); }}
-          >
-            <Link2 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">{data.type === "odf" ? "Patch" : "Splices"}</span>
           </button>
         )}
         <button

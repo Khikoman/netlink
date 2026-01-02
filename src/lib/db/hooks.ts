@@ -197,7 +197,7 @@ export function useSpliceStats(trayId: number | undefined) {
 }
 
 // ============================================
-// EDGE-BASED SPLICE HOOKS (for UnifiedSpliceEditor)
+// EDGE-BASED SPLICE HOOKS (for UnifiedEdgeEditor)
 // ============================================
 
 /**

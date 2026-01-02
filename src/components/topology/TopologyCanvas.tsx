@@ -53,7 +53,6 @@ import { expandableNodeTypes } from "./nodes/ExpandableNodes";
 import { fiberEdgeTypes } from "./edges/FiberEdge";
 import { getLayoutedElements } from "@/lib/topology/layoutUtils";
 import { FloatingPalette } from "./FloatingPalette";
-import { UnifiedSpliceEditor } from "./UnifiedSpliceEditor";
 import { useUndoRedo, createCommand } from "@/hooks/useUndoRedo";
 import { FloatingNodeEditor } from "./FloatingNodeEditor";
 import { FloatingGPSPicker } from "./FloatingGPSPicker";
@@ -333,14 +332,6 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
   const [newNodeType, setNewNodeType] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<{ nodeId: string; childCount: number } | null>(null);
   const [showPalette, setShowPalette] = useState(true);
-  // Node-centric splice editor state (n8n style)
-  const [spliceEditor, setSpliceEditor] = useState<{
-    nodeId: string;
-    nodeName: string;
-    trayId: number;
-    incomingCables: { id: number; name: string; fiberCount: number; edgeId: string }[];
-    outgoingCables: { id: number; name: string; fiberCount: number; edgeId: string }[];
-  } | null>(null);
   const [editDialog, setEditDialog] = useState<{ nodeId: string; nodeType: string; dbId: number } | null>(null);
   const [gpsDialog, setGpsDialog] = useState<{ nodeId: string; nodeType: string; dbId: number; lat?: number; lng?: number } | null>(null);
   const [infoDropdown, setInfoDropdown] = useState<{ nodeId: string; nodeType: string; dbId: number; nodeName?: string; gpsLat?: number; gpsLng?: number } | null>(null);
@@ -1221,112 +1212,6 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     setHighlightedPath({ nodeIds: new Set(), edgeIds: new Set() });
   }, []);
 
-  // Handle open splice editor from a node (n8n style - node-centric)
-  // Finds incoming and outgoing cables for proper splice editing
-  const handleOpenSpliceEditorFromNode = useCallback(async (nodeId: string, nodeType: string, dbId: number) => {
-    if (!projectId) return;
-
-    // Support closures, ODF, and LCP
-    if (!["closure", "odf", "lcp"].includes(nodeType)) return;
-
-    const node = nodes.find(n => n.id === nodeId);
-    if (!node) return;
-
-    try {
-      // Find ALL incoming edges (cables coming INTO this node)
-      const incomingEdges = edges.filter(e => e.target === nodeId);
-      // Find ALL outgoing edges (cables going OUT from this node)
-      const outgoingEdges = edges.filter(e => e.source === nodeId);
-
-      // Get or create cables for incoming edges
-      const incomingCables: { id: number; name: string; fiberCount: number; edgeId: string }[] = [];
-      for (const edge of incomingEdges) {
-        let cables = await getCablesByEdge(edge.id);
-        if (cables.length === 0) {
-          // Auto-create cable for this edge
-          const sourceNode = nodes.find(n => n.id === edge.source);
-          const cableName = edge.data?.cable?.name || `From-${sourceNode?.data?.label || edge.source.slice(0, 8)}`;
-          const fiberCount = edge.data?.cable?.fiberCount || 48;
-          const cableId = await db.cables.add({
-            projectId,
-            name: cableName,
-            fiberCount: fiberCount,
-            fiberType: "singlemode",
-          }) as number;
-          await createEdgeCable(edge.id, cableId);
-          cables = await getCablesByEdge(edge.id);
-        }
-        if (cables[0]) {
-          incomingCables.push({
-            id: cables[0].id!,
-            name: cables[0].name,
-            fiberCount: cables[0].fiberCount,
-            edgeId: edge.id,
-          });
-        }
-      }
-
-      // Get or create cables for outgoing edges
-      const outgoingCables: { id: number; name: string; fiberCount: number; edgeId: string }[] = [];
-      for (const edge of outgoingEdges) {
-        let cables = await getCablesByEdge(edge.id);
-        if (cables.length === 0) {
-          // Auto-create cable for this edge
-          const targetNode = nodes.find(n => n.id === edge.target);
-          const cableName = edge.data?.cable?.name || `To-${targetNode?.data?.label || edge.target.slice(0, 8)}`;
-          const fiberCount = edge.data?.cable?.fiberCount || 48;
-          const cableId = await db.cables.add({
-            projectId,
-            name: cableName,
-            fiberCount: fiberCount,
-            fiberType: "singlemode",
-          }) as number;
-          await createEdgeCable(edge.id, cableId);
-          cables = await getCablesByEdge(edge.id);
-        }
-        if (cables[0]) {
-          outgoingCables.push({
-            id: cables[0].id!,
-            name: cables[0].name,
-            fiberCount: cables[0].fiberCount,
-            edgeId: edge.id,
-          });
-        }
-      }
-
-      // Find or create tray for this enclosure
-      let trayId = 0;
-      if (dbId && nodeType === "closure") {
-        const trays = await db.trays.where("enclosureId").equals(dbId).toArray();
-        if (trays.length > 0) {
-          trayId = trays[0].id!;
-        } else {
-          trayId = await db.trays.add({
-            enclosureId: dbId,
-            number: 1,
-            capacity: 24,
-          }) as number;
-        }
-      }
-
-      // Check if we have at least one cable on each side
-      if (incomingCables.length === 0 && outgoingCables.length === 0) {
-        console.warn("No cables found for node:", nodeId);
-        return;
-      }
-
-      setSpliceEditor({
-        nodeId,
-        nodeName: node.data?.label || "Node",
-        trayId,
-        incomingCables,
-        outgoingCables,
-      });
-    } catch (err) {
-      console.error("Failed to open splice editor:", err);
-    }
-  }, [edges, nodes, projectId]);
-
   // Handle open unified edge editor (cable + splices) - replaces separate cable config
   const handleOpenEdgeEditor = useCallback(async (edgeId: string) => {
     if (!projectId) return;
@@ -1572,7 +1457,6 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
       if (e.key === "Escape") {
         if (editDialog) { setEditDialog(null); return; }
         if (gpsDialog) { setGpsDialog(null); return; }
-        if (spliceEditor) { setSpliceEditor(null); return; }
         if (infoDropdown) { setInfoDropdown(null); return; }
         if (quickTypePicker) { setQuickTypePicker(null); return; }
         if (portManager) { setPortManager(null); return; }
@@ -1644,15 +1528,6 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
         return;
       }
 
-      // S - Open Splice Editor (for closure, odf, lcp nodes)
-      if (e.key === "s" || e.key === "S") {
-        if (selectedNode && ["closure", "odf", "lcp"].includes(selectedNode.data.type) && selectedNode.data.dbId) {
-          e.preventDefault();
-          handleOpenSpliceEditorFromNode(selectedNode.id, selectedNode.data.type, selectedNode.data.dbId);
-        }
-        return;
-      }
-
       // T - Trace fiber path from selected node
       if (e.key === "t" || e.key === "T") {
         if (selectedNode && selectedNode.data.dbId) {
@@ -1684,10 +1559,9 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
-    nodes, editDialog, addDialog, gpsDialog, deleteConfirm, quickTypePicker, portManager, spliceEditor, infoDropdown,
+    nodes, editDialog, addDialog, gpsDialog, deleteConfirm, quickTypePicker, portManager, infoDropdown,
     handleNodeDelete, handleNodeEdit, handleNodeSetLocation, handleNodeAddChild, handleNodeInfo, handleOpenPortManager,
-    handleOpenSpliceEditorFromNode, handleOpenFiberPath,
-    canUndoCommand, canRedoCommand, undoCommand, redoCommand
+    handleOpenFiberPath, canUndoCommand, canRedoCommand, undoCommand, redoCommand
   ]);
 
   // Filter nodes by search AND inject action callbacks into node data
@@ -1725,7 +1599,6 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
           onSetLocation: handleNodeSetLocation,
           onInfo: handleNodeInfo,
           onManagePorts: handleOpenPortManager,
-          onOpenSpliceMatrix: handleOpenSpliceEditorFromNode,
           onTracePath: handleOpenFiberPath,
           isHighlighted,
           // Fiber summary data for node display
@@ -1746,7 +1619,7 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
         },
       };
     });
-  }, [nodes, edges, edgeCablesMap, debouncedSearchQuery, highlightedPath.nodeIds, handleNodeAddChild, handleNodeEdit, handleNodeDelete, handleNodeDuplicate, handleNodeSetLocation, handleNodeInfo, handleOpenPortManager, handleOpenSpliceEditorFromNode, handleOpenFiberPath]);
+  }, [nodes, edges, edgeCablesMap, debouncedSearchQuery, highlightedPath.nodeIds, handleNodeAddChild, handleNodeEdit, handleNodeDelete, handleNodeDuplicate, handleNodeSetLocation, handleNodeInfo, handleOpenPortManager, handleOpenFiberPath]);
 
   // Inject action callbacks into edge data AND apply path highlighting
   // Phase 2: Merge database-driven cable/splice data into edges
@@ -2001,19 +1874,6 @@ function TopologyCanvasInner({ projectId: propProjectId }: TopologyCanvasProps) 
         )}
       </ReactFlow>
       </div>
-
-      {/* Unified Splice Editor */}
-      {spliceEditor && (
-        <UnifiedSpliceEditor
-          isOpen={true}
-          onClose={() => setSpliceEditor(null)}
-          nodeId={spliceEditor.nodeId}
-          nodeName={spliceEditor.nodeName}
-          trayId={spliceEditor.trayId}
-          incomingCables={spliceEditor.incomingCables}
-          outgoingCables={spliceEditor.outgoingCables}
-        />
-      )}
 
       {/* Floating Node Editor */}
       {editDialog && (
